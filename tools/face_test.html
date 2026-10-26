@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>face orientation test</title>
+<style>body { margin: 0; } canvas { display: block; }</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three.module.js",
+    "three/addons/": "../vendor/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(1280, 720);
+renderer.toneMapping = THREE.NoToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8090a8);
+const camera = new THREE.PerspectiveCamera(35, 1280 / 720, 0.1, 200);
+camera.position.set(0, 1.5, 7.5);
+camera.lookAt(0, 0.9, 0);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(3, 6, 5);
+scene.add(sun);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({ color: 0x55607a }),
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// 坐标轴参照：+x 红、+z 绿（相机在 +z 看向 -z）
+const axes = new THREE.Group();
+const mk = (dir, color) => {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2, 6),
+    new THREE.MeshBasicMaterial({ color }));
+  m.position.copy(dir.clone().multiplyScalar(1));
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  axes.add(m);
+};
+mk(new THREE.Vector3(1, 0, 0), 0xff3333);   // +x
+mk(new THREE.Vector3(0, 0, -1), 0x33ff66);  // 远离相机的 -z
+scene.add(axes);
+
+const loader = new GLTFLoader();
+const yaws = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+const Xs = [-4.5, -1.5, 1.5, 4.5];
+Promise.all([loader.loadAsync('../assets/crowd_a.glb'), loader.loadAsync('../assets/crowd_b.glb')])
+  .then(([a, b]) => {
+    [a, b].forEach((gltf, mi) => {
+      let src = null;
+      gltf.scene.traverse((o) => { if (!src && o.isMesh) src = o; });
+      src.geometry.computeBoundingBox();
+      const yOff = -src.geometry.boundingBox.min.y;
+      yaws.forEach((yaw, i) => {
+        const m = new THREE.Mesh(src.geometry, src.material);
+        const zz = mi === 0 ? 0 : 1.6;
+        m.position.set(Xs[i], yOff * 1.72 + zz * 0, zz);
+        m.scale.setScalar(1.72);
+        m.rotation.y = yaw;
+        scene.add(m);
+      });
+    });
+    renderer.render(scene, camera);
+  });
+</script>
+</body>
+</html>

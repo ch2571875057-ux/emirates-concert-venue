@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="880" viewBox="0 0 1280 880" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
+  <rect width="1280" height="880" fill="#f5f7fa"/>
+  <text x="60" y="46" font-size="26" font-weight="bold" fill="#2b3445">吉祥物 04 · 海马 — 吉他手</text>
+  <text x="60" y="72" font-size="15" fill="#5a6478">海洋主题吉祥物雕塑 · 三视图设计稿（正面 / 侧面 / 俯视）</text>
+  <text x="1220" y="46" font-size="13" fill="#5a6478" text-anchor="end">比例 1m ≙ 165px · 原生朝向 +x · 面数 ≤10k · 导出 GLB</text>
+  <text x="1220" y="68" font-size="13" fill="#5a6478" text-anchor="end">设定：S 形立姿海马，卷尾挂基座，持小木吉他</text>
+
+  <!-- ===================== 正视图 ===================== -->
+  <rect x="60" y="90" width="370" height="560" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="75" y="118" font-size="17" font-weight="bold" fill="#2b3445">正视图（面向观众）</text>
+  <line x1="80" y1="630" x2="410" y2="630" stroke="#9aa4b8" stroke-width="2"/>
+  <rect x="97" y="539" width="296" height="91" fill="#3a4152"/>
+  <rect x="97" y="539" width="296" height="8" fill="#4a5266"/>
+  <rect x="199" y="585" width="92" height="26" rx="4" fill="#20242e" stroke="#6a7488"/>
+  <text x="245" y="603" font-size="11" fill="#cfd6e4" text-anchor="middle">海马 · 吉他手</text>
+  <!-- 身体（描边管：外深内浅） -->
+  <path d="M245,522 C 208,468 262,420 260,362 C 258,306 224,296 238,226" stroke="#e0a620" stroke-width="64" fill="none" stroke-linecap="round"/>
+  <path d="M245,522 C 208,468 262,420 260,362 C 258,306 224,296 238,226" stroke="#ffd23f" stroke-width="56" fill="none" stroke-linecap="round"/>
+  <path d="M243,500 C 216,462 258,420 256,366" stroke="#fff3c4" stroke-width="26" fill="none" stroke-linecap="round" opacity="0.9"/>
+  <!-- 卷尾 -->
+  <path d="M245,522 C 243,552 278,560 292,540 C 302,524 286,510 272,520" stroke="#e0a620" stroke-width="40" fill="none" stroke-linecap="round"/>
+  <path d="M245,522 C 243,552 278,560 292,540 C 302,524 286,510 272,520" stroke="#ffd23f" stroke-width="34" fill="none" stroke-linecap="round"/>
+  <!-- 背鳍锯齿 -->
+  <path d="M226,478 L204,470 L222,456 L202,444 L222,434 L206,422 L226,416 Z" fill="#ffb03a" stroke="#e0a620" stroke-width="1.5"/>
+  <!-- 小鳍臂 -->
+  <path d="M214,330 C 200,344 194,362 198,378 C 208,374 218,360 224,344 Z" fill="#ffb03a" stroke="#e0a620" stroke-width="1.5"/>
+  <path d="M282,330 C 296,344 302,362 298,378 C 288,374 278,360 272,344 Z" fill="#ffb03a" stroke="#e0a620" stroke-width="1.5"/>
+  <!-- 木吉他 -->
+  <circle cx="218" cy="432" r="28" fill="#ff8c42" stroke="#d06a20" stroke-width="2.5"/>
+  <circle cx="244" cy="448" r="32" fill="#ff8c42" stroke="#d06a20" stroke-width="2.5"/>
+  <circle cx="232" cy="440" r="11" fill="#5c3a28"/>
+  <circle cx="232" cy="440" r="16" fill="none" stroke="#58b4f6" stroke-width="3"/>
+  <line x1="258" y1="414" x2="304" y2="344" stroke="#5c3a28" stroke-width="11" stroke-linecap="round"/>
+  <circle cx="310" cy="338" r="9" fill="#5c3a28"/>
+  <line x1="306" y1="342" x2="240" y2="436" stroke="#e8e0c8" stroke-width="1.3"/>
+  <!-- 头 + 冠 + 吻 -->
+  <ellipse cx="246" cy="186" rx="40" ry="44" fill="#ffd23f" stroke="#e0a620" stroke-width="2.5"/>
+  <path d="M226,152 L234,128 L244,148 L254,124 L262,148 L272,130 L278,154" fill="none" stroke="#ffb03a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="236" cy="178" r="6.5" fill="#16202f"/><circle cx="238" cy="175.5" r="2" fill="#ffffff"/>
+  <circle cx="262" cy="178" r="6.5" fill="#16202f"/><circle cx="264" cy="175.5" r="2" fill="#ffffff"/>
+  <circle cx="248" cy="208" r="9" fill="#e8b32e" stroke="#c98f16" stroke-width="1.5"/>
+  <path d="M232,222 Q248,230 264,222" stroke="#c98f16" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- 尺寸与发光标记 -->
+  <line x1="412" y1="124" x2="412" y2="630" stroke="#e03030" stroke-width="1.5"/>
+  <path d="M408,130 L412,122 L416,130 M408,624 L412,632 L416,624" stroke="#e03030" stroke-width="1.5" fill="none"/>
+  <text x="419" y="377" font-size="12" fill="#e03030" text-anchor="middle" transform="rotate(90 419 377)">总高 ≈3.1m</text>
+  <line x1="97" y1="648" x2="393" y2="648" stroke="#e03030" stroke-width="1.5"/>
+  <path d="M103,644 L95,648 L103,652 M387,644 L395,648 L387,652" stroke="#e03030" stroke-width="1.5" fill="none"/>
+  <text x="245" y="664" font-size="12" fill="#e03030" text-anchor="middle">基座 Ø1.8m × 0.55m</text>
+  <circle cx="232" cy="440" r="21" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="232" y="472" font-size="11" font-weight="bold" fill="#e03030" text-anchor="middle">G1</text>
+
+  <!-- ===================== 侧视图 ===================== -->
+  <rect x="455" y="90" width="370" height="560" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="470" y="118" font-size="17" font-weight="bold" fill="#2b3445">侧视图（面朝右 +x）</text>
+  <line x1="475" y1="630" x2="805" y2="630" stroke="#9aa4b8" stroke-width="2"/>
+  <rect x="492" y="539" width="296" height="91" fill="#3a4152"/>
+  <rect x="492" y="539" width="296" height="8" fill="#4a5266"/>
+  <path d="M640,522 C 604,468 656,420 656,362 C 656,306 624,296 636,228" stroke="#e0a620" stroke-width="62" fill="none" stroke-linecap="round"/>
+  <path d="M640,522 C 604,468 656,420 656,362 C 656,306 624,296 636,228" stroke="#ffd23f" stroke-width="54" fill="none" stroke-linecap="round"/>
+  <path d="M640,522 C 638,554 676,560 690,540 C 700,526 686,512 672,522" stroke="#e0a620" stroke-width="38" fill="none" stroke-linecap="round"/>
+  <path d="M640,522 C 638,554 676,560 690,540 C 700,526 686,512 672,522" stroke="#ffd23f" stroke-width="32" fill="none" stroke-linecap="round"/>
+  <path d="M618,470 L596,462 L614,450 L594,438 L614,428 L598,416 L618,410 Z" fill="#ffb03a" stroke="#e0a620" stroke-width="1.5"/>
+  <!-- 头 -->
+  <ellipse cx="648" cy="186" rx="38" ry="42" fill="#ffd23f" stroke="#e0a620" stroke-width="2.5"/>
+  <path d="M630,152 L638,128 L648,148 L658,124 L666,148 L676,130 L682,154" fill="none" stroke="#ffb03a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 管状吻（朝右） -->
+  <path d="M678,192 L712,198 Q721,202 712,208 L678,214 Z" fill="#e8b32e" stroke="#c98f16" stroke-width="1.5"/>
+  <circle cx="662" cy="176" r="6.5" fill="#16202f"/><circle cx="664" cy="173.5" r="2" fill="#ffffff"/>
+  <path d="M680,226 q10,6 20,2" stroke="#c98f16" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- 吉他（斜抱） -->
+  <circle cx="688" cy="430" r="26" fill="#ff8c42" stroke="#d06a20" stroke-width="2.5"/>
+  <circle cx="712" cy="446" r="30" fill="#ff8c42" stroke="#d06a20" stroke-width="2.5"/>
+  <circle cx="700" cy="438" r="10" fill="#5c3a28"/>
+  <circle cx="700" cy="438" r="15" fill="none" stroke="#58b4f6" stroke-width="3"/>
+  <line x1="726" y1="414" x2="770" y2="348" stroke="#5c3a28" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="776" cy="342" r="8" fill="#5c3a28"/>
+  <path d="M716,392 C 728,384 738,372 744,360 C 750,366 748,378 738,388 C 732,394 722,396 716,392 Z" fill="#ffb03a"/>
+  <circle cx="700" cy="438" r="19" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="700" y="470" font-size="11" font-weight="bold" fill="#e03030" text-anchor="middle">G1</text>
+  <text x="770" y="620" font-size="12" fill="#5a6478">原生朝向 +x</text>
+  <path d="M770,600 l22,0 m-8,-5 l8,5 l-8,5" stroke="#5a6478" stroke-width="2" fill="none"/>
+
+  <!-- ===================== 俯视图 ===================== -->
+  <rect x="850" y="90" width="370" height="560" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="865" y="118" font-size="17" font-weight="bold" fill="#2b3445">俯视图（自上而下）</text>
+  <circle cx="1035" cy="375" r="148" fill="#3a4152"/>
+  <circle cx="1035" cy="375" r="140" fill="none" stroke="#4a5266" stroke-width="2"/>
+  <!-- S 身体俯视窄条 -->
+  <path d="M1040,300 C 1010,340 1060,380 1040,420" stroke="#e0a620" stroke-width="50" fill="none" stroke-linecap="round"/>
+  <path d="M1040,300 C 1010,340 1060,380 1040,420" stroke="#ffd23f" stroke-width="42" fill="none" stroke-linecap="round"/>
+  <!-- 头（前上）+ 冠 -->
+  <circle cx="1052" cy="322" r="52" fill="#ffd23f" stroke="#e0a620" stroke-width="2.5"/>
+  <path d="M1030,278 L1038,254 L1048,274 L1058,250 L1068,274 L1078,256 L1084,280" fill="none" stroke="#ffb03a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 管状吻朝 +x -->
+  <rect x="1100" y="310" width="46" height="22" rx="11" fill="#e8b32e" stroke="#c98f16" stroke-width="1.5"/>
+  <!-- 卷尾 -->
+  <circle cx="1072" cy="462" r="26" fill="none" stroke="#e0a620" stroke-width="12"/>
+  <circle cx="1072" cy="462" r="26" fill="none" stroke="#ffd23f" stroke-width="7"/>
+  <!-- 吉他横置 -->
+  <circle cx="985" cy="420" r="24" fill="#ff8c42" stroke="#d06a20" stroke-width="2.5"/>
+  <circle cx="1007" cy="436" r="28" fill="#ff8c42" stroke="#d06a20" stroke-width="2.5"/>
+  <circle cx="996" cy="428" r="10" fill="#5c3a28"/>
+  <circle cx="996" cy="428" r="15" fill="none" stroke="#58b4f6" stroke-width="3"/>
+  <line x1="966" y1="440" x2="930" y2="466" stroke="#5c3a28" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="996" cy="428" r="19" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="996" y="400" font-size="11" font-weight="bold" fill="#e03030" text-anchor="middle">G1</text>
+  <text x="1035" y="556" font-size="12" fill="#5a6478" text-anchor="middle">基座 Ø1.8m</text>
+  <text x="1180" y="380" font-size="12" fill="#5a6478">前方</text>
+  <path d="M1176,388 l0,20 m-5,-8 l5,8 l5,-8" stroke="#5a6478" stroke-width="2" fill="none"/>
+
+  <!-- ===================== 底部信息条 ===================== -->
+  <rect x="60" y="680" width="370" height="180" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="75" y="706" font-size="15" font-weight="bold" fill="#2b3445">配色</text>
+  <rect x="75" y="720" width="52" height="40" rx="6" fill="#ffd23f"/><text x="101" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#ffd23f</text><text x="101" y="792" font-size="11" fill="#5a6478" text-anchor="middle">身体</text>
+  <rect x="165" y="720" width="52" height="40" rx="6" fill="#fff3c4"/><text x="191" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#fff3c4</text><text x="191" y="792" font-size="11" fill="#5a6478" text-anchor="middle">腹线</text>
+  <rect x="255" y="720" width="52" height="40" rx="6" fill="#ffb03a"/><text x="281" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#ffb03a</text><text x="281" y="792" font-size="11" fill="#5a6478" text-anchor="middle">鳍/冠</text>
+  <rect x="345" y="720" width="52" height="40" rx="6" fill="#e0a620"/><text x="371" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#e0a620</text><text x="371" y="792" font-size="11" fill="#5a6478" text-anchor="middle">描边</text>
+  <rect x="75" y="804" width="52" height="40" rx="6" fill="#ff8c42"/><text x="101" y="862" font-size="11" fill="#5a6478" text-anchor="middle">#ff8c42</text><text x="101" y="820" font-size="10" fill="#5a6478" text-anchor="middle">吉他</text>
+  <rect x="165" y="804" width="52" height="40" rx="6" fill="#58b4f6"/><text x="191" y="862" font-size="11" fill="#5a6478" text-anchor="middle">#58b4f6</text><text x="191" y="820" font-size="10" fill="#e03030" text-anchor="middle">发光</text>
+
+  <rect x="455" y="680" width="370" height="180" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="470" y="706" font-size="15" font-weight="bold" fill="#2b3445">发光件（GLOW_* 材质，夜景自发光）</text>
+  <circle cx="486" cy="730" r="9" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="504" y="735" font-size="13" fill="#2b3445">G1 吉他音孔环（钳蓝 #58b4f6）</text>
+  <text x="470" y="775" font-size="12" fill="#5a6478">射灯：基座顶缘向上打光（暖白，无阴影）</text>
+  <text x="470" y="797" font-size="12" fill="#5a6478">灯槽：基座顶缘内嵌发光条</text>
+
+  <rect x="850" y="680" width="370" height="180" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="865" y="706" font-size="15" font-weight="bold" fill="#2b3445">建模备注</text>
+  <text x="865" y="732" font-size="13" fill="#2b3445">· S 形身姿最苗条，体宽 ≈0.6m</text>
+  <text x="865" y="756" font-size="13" fill="#2b3445">· 顶冠三叉 + 管状长吻 + 卷尾挂钩</text>
+  <text x="865" y="780" font-size="13" fill="#2b3445">· 原点：基座底面中心；原生朝向 +x</text>
+  <text x="865" y="804" font-size="13" fill="#2b3445">· 场外北入口，面向北</text>
+</svg>

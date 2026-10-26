@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>酋长球场 · 演唱会场馆</title>
+<link rel="stylesheet" href="styles.css?v=2">
+</head>
+<body>
+<div id="app"></div>
+
+<div id="loading">
+  <div class="loading-card">
+    <div class="loading-title">酋长球场 · 演唱会场馆</div>
+    <div class="loading-sub">正在载入球场模型…</div>
+    <div class="loading-bar"><div id="loading-fill"></div></div>
+    <div id="loading-pct">0%</div>
+    <div id="loading-error"></div>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <aside id="sidebar">
+    <div class="sb-head">
+      <button id="sb-toggle" class="sb-icon-btn" title="收起/展开面板">⟨</button>
+      <div class="sb-title">
+        <span class="sb-name">酋长球场</span>
+        <span class="sb-sub">演唱会场馆</span>
+      </div>
+    </div>
+    <div class="sb-rail" id="sb-rail"></div>
+    <div class="sb-body" id="hud-groups"></div>
+    <div class="sb-status" id="sb-status"></div>
+  </aside>
+  <div id="caption"></div>
+  <div id="toast-box"></div>
+</div>
+
+<div id="debug-info" class="hidden"></div>
+
+<script>
+// QA：把模块加载/运行错误写到加载层，避免静默黑屏
+(function () {
+  function report(msg) {
+    var el = document.getElementById('loading-error');
+    if (el) el.textContent += msg + '\n';
+  }
+  window.addEventListener('error', function (e) {
+    var st = e.error && e.error.stack ? e.error.stack.split('
+').slice(1, 4).join(' | ') : '';
+    report('[error] ' + (e.message || e.error) + ' @ ' + (e.filename || '').split('/').pop() + ':' + (e.lineno || '') + ' :: ' + st);
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    report('[promise] ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+})();
+</script>
+
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/jsm/"
+  }
+}
+</script>
+<script>
+// 收起/展开按钮：内联绑定，模型加载前即可用（不依赖 app.js）
+window.addEventListener('DOMContentLoaded', function () {
+  var btn = document.getElementById('sb-toggle');
+  btn.onclick = function () {
+    var collapsed = document.getElementById('sidebar').classList.toggle('collapsed');
+    btn.textContent = collapsed ? '⟩' : '⟨';
+  };
+});
+</script>
+<script type="module" src="js/app.js?v=2"></script>
+</body>
+</html>

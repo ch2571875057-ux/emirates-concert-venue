@@ -1,0 +1,14 @@
+# 本地工作区配置
+.zcode/
+
+# QA 过程截图（83MB 过程产物，验收图不入库）
+preview/
+
+# 范式文档参考材料（版权归原文档方，不公开分发）
+paradigm.txt
+paradigm_imgs/
+
+# 本地临时文件
+*.log
+.qacheck/
+sandbox/*.blend*

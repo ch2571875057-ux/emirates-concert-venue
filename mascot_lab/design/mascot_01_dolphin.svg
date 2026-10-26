@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="880" viewBox="0 0 1280 880" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
+  <rect width="1280" height="880" fill="#f5f7fa"/>
+  <text x="60" y="46" font-size="26" font-weight="bold" fill="#2b3445">吉祥物 01 · 海豚 — 主唱</text>
+  <text x="60" y="72" font-size="15" fill="#5a6478">海洋主题吉祥物雕塑 · 三视图设计稿（正面 / 侧面 / 俯视）</text>
+  <text x="1220" y="46" font-size="13" fill="#5a6478" text-anchor="end">比例 1m ≙ 165px · 原生朝向 +x · 面数 ≤10k · 导出 GLB</text>
+  <text x="1220" y="68" font-size="13" fill="#5a6478" text-anchor="end">设定：尾立海豚，左鳍举麦克风、右鳍挥手</text>
+
+  <!-- ===================== 正视图 ===================== -->
+  <rect x="60" y="90" width="370" height="560" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="75" y="118" font-size="17" font-weight="bold" fill="#2b3445">正视图（面向观众）</text>
+  <line x1="80" y1="630" x2="410" y2="630" stroke="#9aa4b8" stroke-width="2"/>
+  <!-- 基座 -->
+  <rect x="97" y="539" width="296" height="91" fill="#3a4152"/>
+  <rect x="97" y="539" width="296" height="8" fill="#4a5266"/>
+  <rect x="199" y="585" width="92" height="26" rx="4" fill="#20242e" stroke="#6a7488"/>
+  <text x="245" y="603" font-size="11" fill="#cfd6e4" text-anchor="middle">海豚 · 主唱</text>
+  <!-- 尾鳍 peek -->
+  <path d="M200,540 L222,539 L212,508 Z" fill="#2f7fd0"/>
+  <path d="M290,540 L268,539 L278,508 Z" fill="#2f7fd0"/>
+  <!-- 身体（叠圆） -->
+  <ellipse cx="245" cy="530" rx="30" ry="22" fill="#58b4f6"/>
+  <ellipse cx="245" cy="468" rx="46" ry="70" fill="#58b4f6"/>
+  <ellipse cx="245" cy="352" rx="58" ry="92" fill="#58b4f6"/>
+  <ellipse cx="245" cy="252" rx="52" ry="78" fill="#58b4f6"/>
+  <ellipse cx="245" cy="172" rx="50" ry="52" fill="#58b4f6"/>
+  <ellipse cx="245" cy="200" rx="26" ry="16" fill="#7ec3ff"/>
+  <ellipse cx="245" cy="395" rx="38" ry="120" fill="#eef7ff" opacity="0.95"/>
+  <!-- 左鳍举麦克风（观众左） -->
+  <path d="M212,300 C 186,288 162,252 156,208 C 154,192 170,186 180,198 C 196,220 208,252 220,282 Z" fill="#2f7fd0"/>
+  <line x1="168" y1="206" x2="154" y2="178" stroke="#3a4152" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="150" cy="168" r="14" fill="#cfd6e4" stroke="#3a4152" stroke-width="2"/>
+  <path d="M140,163 q10,-7 20,0 M140,173 q10,7 20,0" stroke="#3a4152" stroke-width="1.5" fill="none"/>
+  <!-- 右鳍挥手 -->
+  <path d="M278,300 C 304,286 330,264 348,238 C 356,226 346,212 332,220 C 310,232 292,254 276,278 Z" fill="#2f7fd0"/>
+  <path d="M352,214 q10,-8 22,-6 M356,232 q12,-6 24,-2" stroke="#5a6478" stroke-width="2" fill="none"/>
+  <!-- 表情 -->
+  <circle cx="222" cy="168" r="7" fill="#16202f"/><circle cx="224.5" cy="165.5" r="2.2" fill="#ffffff"/>
+  <circle cx="268" cy="168" r="7" fill="#16202f"/><circle cx="270.5" cy="165.5" r="2.2" fill="#ffffff"/>
+  <path d="M225,214 Q245,228 265,214" stroke="#16202f" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <!-- 尺寸标注 -->
+  <line x1="412" y1="120" x2="412" y2="630" stroke="#e03030" stroke-width="1.5"/>
+  <path d="M408,126 L412,118 L416,126 M408,624 L412,632 L416,624" stroke="#e03030" stroke-width="1.5" fill="none"/>
+  <rect x="412" y="356" width="14" height="42" fill="#ffffff"/>
+  <text x="419" y="381" font-size="12" fill="#e03030" text-anchor="middle" transform="rotate(90 419 381)">总高 ≈3.0m</text>
+  <line x1="97" y1="648" x2="393" y2="648" stroke="#e03030" stroke-width="1.5"/>
+  <path d="M103,644 L95,648 L103,652 M387,644 L395,648 L387,652" stroke="#e03030" stroke-width="1.5" fill="none"/>
+  <text x="245" y="664" font-size="12" fill="#e03030" text-anchor="middle">基座 Ø1.8m × 0.55m</text>
+  <!-- 发光件标记 -->
+  <circle cx="150" cy="168" r="20" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="150" y="140" font-size="11" font-weight="bold" fill="#e03030" text-anchor="middle">G1</text>
+  <circle cx="222" cy="168" r="13" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <circle cx="268" cy="168" r="13" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="268" y="146" font-size="11" font-weight="bold" fill="#e03030">G2</text>
+
+  <!-- ===================== 侧视图 ===================== -->
+  <rect x="455" y="90" width="370" height="560" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="470" y="118" font-size="17" font-weight="bold" fill="#2b3445">侧视图（面朝右 +x）</text>
+  <line x1="475" y1="630" x2="805" y2="630" stroke="#9aa4b8" stroke-width="2"/>
+  <rect x="492" y="539" width="296" height="91" fill="#3a4152"/>
+  <rect x="492" y="539" width="296" height="8" fill="#4a5266"/>
+  <path d="M612,538 L598,506 L636,532 Z" fill="#2f7fd0"/>
+  <path d="M668,538 L682,506 L644,532 Z" fill="#2f7fd0"/>
+  <path d="M640,536 C 598,522 584,468 598,418 C 584,358 598,300 622,258 C 636,230 646,205 652,180 C 656,158 672,150 690,162 C 706,172 720,180 734,186 C 740,189 738,198 728,198 C 712,198 702,206 694,224 C 704,268 698,330 684,388 C 692,448 684,510 640,536 Z" fill="#58b4f6"/>
+  <path d="M614,300 C 586,272 576,236 590,212 C 602,238 612,266 624,292 Z" fill="#2f7fd0"/>
+  <ellipse cx="678" cy="400" rx="26" ry="105" fill="#eef7ff" opacity="0.9"/>
+  <circle cx="686" cy="208" r="7" fill="#16202f"/><circle cx="688.5" cy="205.5" r="2.2" fill="#ffffff"/>
+  <path d="M696,224 q12,8 24,4" stroke="#16202f" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M688,296 C 712,300 732,312 744,330 C 750,340 742,350 730,346 C 712,340 696,328 684,316 Z" fill="#2f7fd0"/>
+  <line x1="736" y1="338" x2="758" y2="326" stroke="#3a4152" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="764" cy="322" r="13" fill="#cfd6e4" stroke="#3a4152" stroke-width="2"/>
+  <ellipse cx="640" cy="330" rx="14" ry="34" fill="#2f7fd0"/>
+  <circle cx="764" cy="322" r="19" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="764" y="296" font-size="11" font-weight="bold" fill="#e03030" text-anchor="middle">G1</text>
+  <text x="770" y="620" font-size="12" fill="#5a6478">原生朝向 +x</text>
+  <path d="M770,600 l22,0 m-8,-5 l8,5 l-8,5" stroke="#5a6478" stroke-width="2" fill="none"/>
+
+  <!-- ===================== 俯视图 ===================== -->
+  <rect x="850" y="90" width="370" height="560" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="865" y="118" font-size="17" font-weight="bold" fill="#2b3445">俯视图（自上而下）</text>
+  <circle cx="1035" cy="375" r="148" fill="#3a4152"/>
+  <circle cx="1035" cy="375" r="140" fill="none" stroke="#4a5266" stroke-width="2"/>
+  <path d="M918,375 L870,332 L896,375 Z" fill="#2f7fd0"/>
+  <path d="M918,375 L870,418 L896,375 Z" fill="#2f7fd0"/>
+  <path d="M918,375 C 920,355 935,345 955,342 L955,408 C 935,405 920,395 918,375 Z" fill="#58b4f6"/>
+  <ellipse cx="1015" cy="375" rx="95" ry="92" fill="#58b4f6"/>
+  <ellipse cx="1108" cy="375" rx="16" ry="20" fill="#58b4f6"/>
+  <circle cx="1000" cy="372" r="8" fill="#2f7fd0"/>
+  <path d="M958,296 C 940,272 932,250 936,230 C 952,240 966,262 974,286 Z" fill="#2f7fd0"/>
+  <path d="M958,454 C 940,478 932,500 936,520 C 952,510 966,488 974,464 Z" fill="#2f7fd0"/>
+  <path d="M1075,300 C 1094,294 1110,284 1120,272 C 1126,264 1120,254 1110,258 C 1096,264 1084,276 1072,290 Z" fill="#2f7fd0"/>
+  <circle cx="1134" cy="262" r="12" fill="#cfd6e4" stroke="#3a4152" stroke-width="2"/>
+  <circle cx="1134" cy="262" r="18" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="1134" y="238" font-size="11" font-weight="bold" fill="#e03030" text-anchor="middle">G1</text>
+  <path d="M1090,440 C 1108,448 1124,458 1134,470" stroke="#2f7fd0" stroke-width="14" fill="none" stroke-linecap="round"/>
+  <text x="1035" y="556" font-size="12" fill="#5a6478" text-anchor="middle">基座 Ø1.8m</text>
+  <text x="1180" y="380" font-size="12" fill="#5a6478">前方</text>
+  <path d="M1176,388 l0,20 m-5,-8 l5,8 l5,-8" stroke="#5a6478" stroke-width="2" fill="none"/>
+
+  <!-- ===================== 底部信息条 ===================== -->
+  <rect x="60" y="680" width="370" height="180" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="75" y="706" font-size="15" font-weight="bold" fill="#2b3445">配色</text>
+  <rect x="75" y="720" width="52" height="40" rx="6" fill="#3d8fe0"/><text x="101" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#3d8fe0</text><text x="101" y="792" font-size="11" fill="#5a6478" text-anchor="middle">背脊</text>
+  <rect x="165" y="720" width="52" height="40" rx="6" fill="#58b4f6"/><text x="191" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#58b4f6</text><text x="191" y="792" font-size="11" fill="#5a6478" text-anchor="middle">身体</text>
+  <rect x="255" y="720" width="52" height="40" rx="6" fill="#eef7ff" stroke="#d5dbe6"/><text x="281" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#eef7ff</text><text x="281" y="792" font-size="11" fill="#5a6478" text-anchor="middle">腹部</text>
+  <rect x="345" y="720" width="52" height="40" rx="6" fill="#2f7fd0"/><text x="371" y="778" font-size="11" fill="#5a6478" text-anchor="middle">#2f7fd0</text><text x="371" y="792" font-size="11" fill="#5a6478" text-anchor="middle">鳍/尾</text>
+  <rect x="75" y="804" width="52" height="40" rx="6" fill="#3a4152"/><text x="101" y="862" font-size="11" fill="#5a6478" text-anchor="middle">#3a4152</text>
+  <rect x="165" y="804" width="52" height="40" rx="6" fill="#bfe3ff"/><text x="191" y="862" font-size="11" fill="#5a6478" text-anchor="middle">#bfe3ff</text><text x="191" y="820" font-size="10" fill="#e03030" text-anchor="middle">发光</text>
+
+  <rect x="455" y="680" width="370" height="180" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="470" y="706" font-size="15" font-weight="bold" fill="#2b3445">发光件（GLOW_* 材质，夜景自发光）</text>
+  <circle cx="486" cy="730" r="9" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="504" y="735" font-size="13" fill="#2b3445">G1 麦克风头（冰蓝 #bfe3ff）</text>
+  <circle cx="486" cy="758" r="9" fill="none" stroke="#e03030" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="504" y="763" font-size="13" fill="#2b3445">G2 双眼（微光）</text>
+  <text x="470" y="800" font-size="12" fill="#5a6478">射灯：基座顶缘向上打光（暖白，无阴影）</text>
+  <text x="470" y="822" font-size="12" fill="#5a6478">灯槽：基座顶缘内嵌发光条</text>
+
+  <rect x="850" y="680" width="370" height="180" rx="10" fill="#ffffff" stroke="#d5dbe6"/>
+  <text x="865" y="706" font-size="15" font-weight="bold" fill="#2b3445">建模备注</text>
+  <text x="865" y="732" font-size="13" fill="#2b3445">· 尾立姿态，身体 S 形微曲</text>
+  <text x="865" y="756" font-size="13" fill="#2b3445">· 本体高 ≈2.45m，圆润卡通亮面质感</text>
+  <text x="865" y="780" font-size="13" fill="#2b3445">· 原点：基座底面中心；原生朝向 +x</text>
+  <text x="865" y="804" font-size="13" fill="#2b3445">· 场外南广场主雕，面向南迎宾</text>
+</svg>
