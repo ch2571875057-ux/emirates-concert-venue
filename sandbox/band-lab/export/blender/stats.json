@@ -1,0 +1,86 @@
+[
+ {
+  "id": "drums",
+  "name": "架子鼓",
+  "voxels": 1306,
+  "verts": 6304,
+  "quads": 1576,
+  "tris": 3152,
+  "colors": 7,
+  "size_m": [
+   2.2,
+   1.4,
+   1.7
+  ]
+ },
+ {
+  "id": "guitar",
+  "name": "电吉他",
+  "voxels": 169,
+  "verts": 496,
+  "quads": 124,
+  "tris": 248,
+  "colors": 6,
+  "size_m": [
+   0.4,
+   1.25,
+   0.3
+  ]
+ },
+ {
+  "id": "bass",
+  "name": "电贝斯",
+  "voxels": 175,
+  "verts": 456,
+  "quads": 114,
+  "tris": 228,
+  "colors": 5,
+  "size_m": [
+   0.4,
+   1.45,
+   0.3
+  ]
+ },
+ {
+  "id": "keys",
+  "name": "双层键盘",
+  "voxels": 570,
+  "verts": 2212,
+  "quads": 553,
+  "tris": 1106,
+  "colors": 6,
+  "size_m": [
+   1.0,
+   1.1,
+   0.75
+  ]
+ },
+ {
+  "id": "amp",
+  "name": "吉他音箱堆",
+  "voxels": 1000,
+  "verts": 1088,
+  "quads": 272,
+  "tris": 544,
+  "colors": 7,
+  "size_m": [
+   0.8,
+   1.0,
+   0.4
+  ]
+ },
+ {
+  "id": "ampbass",
+  "name": "贝斯音箱",
+  "voxels": 612,
+  "verts": 808,
+  "quads": 202,
+  "tris": 404,
+  "colors": 7,
+  "size_m": [
+   0.65,
+   0.75,
+   0.4
+  ]
+ }
+]

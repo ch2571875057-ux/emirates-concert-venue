@@ -7,6 +7,10 @@
 import * as THREE from 'three';
 import { DATA } from './data.js';
 import { STAND_PROFILE } from './standProfile.js';
+import { pitGrid, pixelStateAt } from './pixel.js';
+import { fxAt, fxRange, wrap01, wrapPm } from './wavefx.js';
+import { lightShowAt } from './lightshow.js';
+import { lightShowBAt } from './lightshowb.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const S = DATA.stadium;
@@ -791,7 +795,7 @@ export function buildLights() {
       dir.normalize();
       len = B.len + 8;
     }
-    const unit = { alphas: [], pool: null, headMat: null, seed: i / R.beamN, origin, baseDir: dir.clone(), len, beamMeshes: [], poolMesh: null };
+    const unit = { alphas: [], pool: null, headMat: null, seed: i / R.beamN, origin, baseDir: dir.clone(), len, beamMeshes: [], poolMesh: null, colors: [], baseColor: new THREE.Color(color) };
 
     for (const layer of [B.core, B.glow]) {
       const u = {
@@ -807,6 +811,8 @@ export function buildLights() {
         uDustSpeed: { value: B.dustSpeed },
       };
       unit.alphas.push({ u: u.uAlpha, base: layer.alpha });
+      // 逐束独立颜色 uniform：灯光秀可把它渐变到纯白而互不影响
+      unit.colors.push(u.uColor);
       const beam = new THREE.Mesh(
         new THREE.CylinderGeometry(layer.topR, layer.botR, len, 16, 1, true),
         beamMaterial(u),
@@ -948,6 +954,9 @@ export function buildLights() {
 // 三模式（steady/strobe/sweep）× dimmer × lampBanks → 写入各束 uAlpha；
 // 扫描/频闪模式光束实时摆动（风暴感）；灯头/光池/尘埃/聚光同步缩放；sharedTime 驱动尘埃流动
 const _YUP = new THREE.Vector3(0, 1, 0);
+// 灯光秀「转纯白」的插值目标（素材里爆发与白带阶段光束是纯白）
+const _lsWhite = new THREE.Color(1, 1, 1);
+const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 export function updateLights(group, elapsed, state) {
   const L = DATA.concert.lights;
   const R = DATA.concert.stageV2.rings;
@@ -955,6 +964,12 @@ export function updateLights(group, elapsed, state) {
   const dim = state.dimmer ?? 1;
   const on = state.lampBanks;
   U.sharedTime.value = elapsed;
+  // 灯光秀：光束阵列层。A 段爆发全开、收束塌缩、顶部白带转纯白；
+  // B 段光束只做中央光团的环绕陪衬，颜色偏蓝。
+  const LS = lightShowOf(state, elapsed);
+  const lsW = LS ? clamp01(LS.w) : 0;
+  const lsOn = lsW > 0.001;
+  const _lsTint = new THREE.Color();
   for (const unit of U.beamUnits) {
     let k = 1;
     if (state.mode === 'strobe') {
@@ -966,6 +981,21 @@ export function updateLights(group, elapsed, state) {
     }
     if (!on) k = 0;
     k *= dim;
+    if (lsOn) {
+      // 编舞接管：所有光束同步（不再各束独立抖动），逐束保留极小的错相位避免死板
+      const jitter = 1 + 0.04 * Math.sin(elapsed * 2.6 + unit.seed * 23);
+      k = k * (1 - lsW) + LS.beam.gain * lsW * jitter;
+    }
+    // 颜色每帧都写：灯光秀结束时要能回到本色，否则会停在纯白/蓝
+    // 两级混合：先按 beam.white 去色成白，再按 beam.blue 推向深蓝（B 段用）
+    const wt = lsOn ? LS.beam.white * lsW : 0;
+    const bt = lsOn ? (LS.beam.blue || 0) * lsW : 0;
+    for (const c of unit.colors) {
+      // unit.colors 里直接存的是 uColor uniform 对象（{value: Color}）
+      _lsTint.copy(unit.baseColor).lerp(_lsWhite, wt);
+      if (bt > 0) _lsTint.lerp(_sbBlue, bt);
+      c.value.copy(_lsTint);
+    }
     for (const a of unit.alphas) a.u.value = a.base * k;
     unit.headMat.emissiveIntensity = 0.15 + R.headI * k;
     if (unit.pool) unit.pool.u.value = unit.pool.base * k;
@@ -1082,23 +1112,18 @@ export function buildAudience() {
   captureSway(crabInst);
   g.add(crabInst);
 
-  // 点阵编址：每支棒 → (环向列 θ, 图案行 row)。行号按"层内归一化"连续映射——
-  // 下层/俱乐部层/上层各占一段连续图案行区，消除层间空隙导致的图案断裂
-  const TIER_BANDS = [
-    { y0: 6.5, y1: 16.5, base: 2,  span: 14 },  // 下层 → 图案行 2-16
-    { y0: 16.5, y1: 24.5, base: 18, span: 7 },  // 俱乐部层 → 18-25
-    { y0: 24.5, y1: 44.5, base: 27, span: 19 }, // 上层 → 27-46
-  ];
-  const rowOf = (y) => {
-    const b = TIER_BANDS.find((t) => y >= t.y0 && y < t.y1) || TIER_BANDS[2];
-    const f = Math.min(1, Math.max(0, (y - b.y0) / (b.y1 - b.y0)));
-    return b.base + f * b.span;
-  };
-  const mkEntries = (inst, list) => list.map((sp, i) => ({
-    mesh: inst, idx: i,
-    theta: Math.atan2(sp.z - S.bowl.centerZ, sp.x - S.bowl.centerX),
-    row: rowOf(sp.y),
-  }));
+  // 看台只做潮汐编址（外场不参与点阵图案）；u/s 是人浪光效的预计算位置参数。
+  //   u = 环向角归一化 0..1（整周）
+  //   s = 距舞台一侧的归一化角距 0..1（0 = 舞台两翼起点，1 = 正对面相遇点）
+  const thStage = Math.atan2(SA.stageFrontZ - S.bowl.centerZ, S.pitch.center.x - S.bowl.centerX);
+  const mkEntries = (inst, list) => list.map((sp, i) => {
+    const theta = Math.atan2(sp.z - S.bowl.centerZ, sp.x - S.bowl.centerX);
+    return {
+      mesh: inst, idx: i, theta,
+      u: wrap01(theta / (Math.PI * 2)),
+      s: Math.min(1, Math.abs(wrapPm(theta - thStage)) / Math.PI),
+    };
+  });
   // 4) 悬空蓝白小方片（氛围光尘，缓慢起伏旋转）
   const SQ = A.squares;
   const sqGeo = new THREE.PlaneGeometry(SQ.size, SQ.size);
@@ -1146,9 +1171,6 @@ function getStickAssets() {
   // 关键补丁：自发光 × 实例颜色 —— setColorAt 才能真正改变每支棒的亮度（潮汐/点阵依赖此能力）
   const glowPatch = (sh) => {
     const ok = sh.fragmentShader.includes('vec3 totalEmissiveRadiance = emissive;');
-    const el = document.getElementById('loading-error');
-    if (el) el.textContent += `[glowPatch] matched=${ok}
-`;
     if (ok) {
       sh.fragmentShader = sh.fragmentShader.replace(
         'vec3 totalEmissiveRadiance = emissive;',
@@ -1292,86 +1314,308 @@ function applyTideEntries(entries, elapsed) {
   }
 }
 
-// ---- 点阵图案（Canvas 简笔画 → 降采样为 cols×rows 色阵，带缓存）----
-const _patternCache = {};
-function makePixelPattern(name) {
-  if (_patternCache[name]) return _patternCache[name];
-  const P = DATA.concert.audience.pixel;
-  const cv = document.createElement('canvas');
-  cv.width = P.cols; cv.height = P.rows;
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#eaf6ff'; ctx.strokeStyle = '#eaf6ff'; ctx.lineCap = 'round';
-  const W = P.cols, H = P.rows;
-  const draw = {
-    heart() {
-      ctx.beginPath();
-      ctx.moveTo(W / 2, H * 0.80);
-      ctx.bezierCurveTo(W * 0.28, H * 0.60, W * 0.30, H * 0.26, W / 2, H * 0.40);
-      ctx.bezierCurveTo(W * 0.70, H * 0.26, W * 0.72, H * 0.60, W / 2, H * 0.80);
-      ctx.fill();
-    },
-    note() {
-      ctx.beginPath(); ctx.ellipse(W * 0.42, H * 0.70, W * 0.022, H * 0.15, -0.3, 0, Math.PI * 2); ctx.fill();
-      ctx.lineWidth = H * 0.07;
-      ctx.beginPath(); ctx.moveTo(W * 0.44, H * 0.66); ctx.lineTo(W * 0.56, H * 0.24); ctx.stroke();
-      ctx.beginPath(); ctx.ellipse(W * 0.60, H * 0.22, W * 0.030, H * 0.09, -0.4, 0, Math.PI * 2); ctx.fill();
-    },
-    smiley() {
-      ctx.lineWidth = H * 0.05;
-      ctx.beginPath(); ctx.arc(W / 2, H * 0.5, H * 0.33, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(W / 2 - H * 0.13, H * 0.42, H * 0.035, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(W / 2 + H * 0.13, H * 0.42, H * 0.035, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(W / 2, H * 0.50, H * 0.19, 0.25 * Math.PI, 0.75 * Math.PI); ctx.stroke();
-    },
-    star() {
-      ctx.beginPath();
-      for (let i = 0; i < 5; i++) {
-        const a = -Math.PI / 2 + (i / 5) * Math.PI * 2;
-        const a2 = a + Math.PI / 5;
-        const R = H * 0.38, r2 = H * 0.16;
-        ctx[i ? 'lineTo' : 'moveTo'](W / 2 + Math.cos(a) * R, H * 0.52 + Math.sin(a) * R);
-        ctx.lineTo(W / 2 + Math.cos(a2) * r2, H * 0.52 + Math.sin(a2) * r2);
-      }
-      ctx.closePath(); ctx.fill();
-    },
-    text() {
-      ctx.font = `bold ${Math.round(H * 0.60)}px Arial`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('BB', W / 2, H * 0.55);
-    },
-  };
-  (draw[name] || draw.heart)();
-  const img = ctx.getImageData(0, 0, W, H).data;
-  const grid = new Array(W * H).fill(null);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (img[(y * W + x) * 4 + 3] > 100) grid[y * W + x] = [0.92, 0.97, 1.0];
-    }
-  }
-  return (_patternCache[name] = grid);
-}
-
-// 点阵显示：图案列随 shift 滚动；非图案棒压暗
+// ---- 点阵图案与编址：见 js/pixel.js（设计空间方程 + 内场平面网格编址，纯逻辑可单测）----
+// 点阵屏只由内场插棒承担；图案随 shift 做有界往复横移，主体 HDR 超亮、边缘过渡、其余保留底光
 function applyPixelEntries(entries, name, shift) {
   if (!entries || !entries.length) return;
-  const P = DATA.concert.audience.pixel;
-  const grid = makePixelPattern(name);
-  if (!applyPixelEntries._dbg) {
-    applyPixelEntries._dbg = true;
-    const hits = grid.filter(Boolean).length;
-    const el = document.getElementById('loading-error');
-    if (el) el.textContent += `[pixel] entries=${entries.length} gridHits=${hits}/${grid.length}
-`;
-  }
+  const P = DATA.concert.crowd.pixel;
   const col = new THREE.Color();
-  const off = Math.round(shift);
   for (const e of entries) {
-    const c = ((Math.floor(((e.theta + Math.PI) / (Math.PI * 2)) * P.cols) + off) % P.cols + P.cols) % P.cols;
-    const r = Math.min(P.rows - 1, Math.max(0, Math.floor(e.row)));
-    const px = grid[r * P.cols + c];
-    if (px) col.setRGB(px[0] * 2.6, px[1] * 2.7, px[2] * 2.8); // HDR 超亮：远距离也能被 Bloom 拾取
+    const v = pixelStateAt(e.row, e.col, shift, name);
+    if (v === 2) col.setRGB(0.92 * 2.6, 0.97 * 2.7, 1.0 * 2.8); // HDR 超亮：远距离也能被 Bloom 拾取
+    else if (v === 1) col.setScalar(P.edge);
     else col.setScalar(P.dim);
     e.mesh.setColorAt(e.idx, col);
+  }
+}
+
+// ---- 人浪光效（条纹 / 相遇 / 追逐）：算法在 js/wavefx.js，这里只负责写色+写摇摆 ----
+// 亮度标量 → HDR 颜色（>1 会被 Bloom 拾取）；同时按亮度给出轻微的摇摆增幅，
+// 让「被点亮」的观众有站起来的感觉，而不只是变色。
+const _fxCol = new THREE.Color();
+// 悬空小方片（700 片）每帧复用的临时矩阵/四元数——提到模块级，避免逐帧分配触发 GC 抖动
+const _flakeM = new THREE.Matrix4(), _flakeQ = new THREE.Quaternion(), _flakeE = new THREE.Euler();
+const _flakeV = new THREE.Vector3(), _flakeSV = new THREE.Vector3(1, 1, 1);
+// meet/chase 是「灭灯型」光效：没被光效扫到的观众要彻底熄灭，只剩被点亮的区段。
+// 这类模式的暗区不仅不给颜色，也不该再大幅摇摆（观众是坐着的）。
+const DARKOUT_MODES = ['meet', 'chase'];
+function applyWaveFxEntries(entries, mode, elapsed, W) {
+  if (!entries || !entries.length) return;
+  const [lo, hi] = fxRange(mode, W);
+  const span = Math.max(1e-4, hi - lo);
+  const t = elapsed * W.timeScale;
+  // 暗区是否完全静止（灭灯型模式：亮区抬身、暗区坐定）
+  const darkOut = DARKOUT_MODES.includes(mode);
+  for (const e of entries) {
+    const b = fxAt(mode, e.u, e.s, t, W);
+    if (b === null) continue;
+    const k = (b - lo) / span;              // 0..1（可略超 1，HDR）
+    const v = b;                             // 直接给亮度：暗部为 0 时即彻底灭灯
+    _fxCol.setRGB(v * 0.92, v * 0.97, v);
+    e.mesh.setColorAt(e.idx, _fxCol);
+    // 摇摆增幅：亮区抬得更高；灭灯型模式的暗区几乎不动（坐着）
+    const amp = darkOut ? 0.10 + 1.80 * k : 1 + 0.9 * k;
+    const sw = e.mesh.userData.sway;
+    if (sw) {
+      const i = e.idx;
+      const arr = e.mesh.instanceMatrix.array;
+      const px = sw.sw[i * 4], pz = sw.sw[i * 4 + 1], py = sw.sw[i * 4 + 2], a = sw.sw[i * 4 + 3] * amp;
+      arr[i * 16 + 12] = sw.base[i * 16 + 12] + Math.sin(elapsed * 1.5 + px) * 0.05 * a;
+      arr[i * 16 + 13] = sw.base[i * 16 + 13] + Math.sin(elapsed * 2.2 + py) * 0.025 * a;
+      arr[i * 16 + 14] = sw.base[i * 16 + 14] + Math.cos(elapsed * 1.25 + pz) * 0.05 * a;
+    }
+  }
+}
+
+// 人浪光效模式（与环境/开场秀模式并列，可被 HUD 或 show 直接设到 audienceMode）
+const WAVE_FX_MODES = ['stripe', 'meet', 'chase'];
+
+// ---- 灯光秀 A · 看台应援棒层 ----
+// 两层叠加：整片底光（gain，可到 HDR）+ 一条绕场行进的高亮带（bandU/bandW）。
+// white 控制冷青 → 纯白的过渡（素材里爆发和白带阶段是纯白，呼吸/黑场是冷青）。
+const _lsCol = new THREE.Color();
+// 观众区的冷蓝色度（素材 B 段实测 B/R 1.6~1.8、sat 36~45）。
+// 注意这里存的是**归一化色度**（B 恒为 1），再乘亮度 v —— 直接对颜色做 lerp
+// 会把暗底光提亮，看起来像整片发白而不是变蓝。
+// 数值经过截图实测回调：线性 B/R=1.39 时，经 Bloom + ACES 出图后落在 B/R≈1.8、
+// sat≈45，与素材吻合（更低的 R 会让出图过饱和到 B/R 2.4+）。
+const _LS_BLUE_R = 0.72;
+const _LS_BLUE_G = 0.79;
+function applyLightShowEntries(entries, R, elapsed) {
+  if (!entries || !entries.length) return;
+  const S = R.sticks;
+  const w = clamp01(R.w);
+  const gain0 = S.gain;
+  const white = S.white;
+  const blue = S.blue || 0;
+  const bandOn = S.bandU >= 0 && S.bandW > 0;
+  // 聚焦扇区：素材 0~4.5s 的亮块是一团居中的光，不是整圈均匀亮。
+  // focusW>0 时按环向距离做平滑衰减，聚焦外只留 focusFloor 的底光。
+  const focusOn = S.focusU >= 0 && S.focusW > 0;
+  const focusFloor = S.focusFloor != null ? S.focusFloor : 0.12;
+  // 独立区域闪烁：素材里把看台切成 3×3 子区两两相关只有 0.44，
+  // 说明人群是各自挥动的，不是整场一个呼吸。这里按环向把观众分成
+  // regionN 个区，每区一个固定相位，区内同闪、跨区错开。
+  const regionN = S.regionN != null ? S.regionN : 12;
+  const flick = S.flicker != null ? S.flicker : 0;
+  const flickHz = S.flickerHz != null ? S.flickerHz : 0.7;
+  const TAU = Math.PI * 2;
+  // 常态基准（权重要交还时插值回去）：蓝白 tint × 启动呼吸
+  const basePulse = 0.85 + 0.15 * Math.sin(elapsed * DATA.concert.audience.pulseSpeed);
+  for (const e of entries) {
+    // 每区一个固定相位（乘上一个非整数倍率，避免所有区整齐划一）
+    let fk = 1;
+    if (flick > 0) {
+      const rid = Math.floor(wrap01(e.u) * regionN);
+      const ph = rid * 2.399963 + rid * rid * 0.37;   // 黄金角撒相位
+      fk = 1 + flick * Math.sin(elapsed * TAU * flickHz * (0.78 + 0.44 * ((rid * 0.618) % 1)) + ph);
+    }
+    let v = gain0 * basePulse * fk;
+    if (focusOn) {
+      const d = Math.abs(wrapPm((e.u - S.focusU) * Math.PI * 2)) / (Math.PI * 2);
+      const f = clamp01(1 - d / S.focusW);
+      v *= focusFloor + (1 - focusFloor) * f * f * (3 - 2 * f);
+    }
+    if (bandOn) {
+      const d = Math.abs(wrapPm((e.u - S.bandU) * Math.PI * 2)) / (Math.PI * 2);
+      const k = Math.max(0, 1 - d / S.bandW);
+      // 带内抬升到满亮，带外保留 S.bandFloor 的底光，避免整片死黑
+      const band = S.bandFloor + (1 - S.bandFloor) * Math.pow(k, 1.4);
+      v *= band * (1 / Math.max(1e-4, S.bandFloor + (1 - S.bandFloor) * 0.5));
+    }
+    // 权重不足 1（收尾段）时朝常态值插值：常态是 instanceColor=(1,1,1)，
+    // 这样 w→0 交还控制权的那一刻不会有亮度台阶。
+    if (w < 1) v = v * w + (1 - w);
+    // white: 0 → 冷青(0.92/0.97/1)，1 → 纯白；blue: 再往深蓝推（B 的观众段）
+    // 蓝只压 R/G、不动 B —— 对整色 lerp 会把暗底光一起提亮，变成"发白"而不是"发蓝"
+    _lsCol.setRGB(v * (0.92 + 0.08 * white), v * (0.97 + 0.03 * white), v);
+    if (blue > 0) {
+      const t = Math.min(1, blue * w);
+      _lsCol.r *= 1 - t * (1 - _LS_BLUE_R);
+      _lsCol.g *= 1 - t * (1 - _LS_BLUE_G);
+    }
+    e.mesh.setColorAt(e.idx, _lsCol);
+    // 亮区抬身、暗区坐定：亮度越高摇摆越大
+    const kk = Math.min(1, Math.max(0, v / 1.6));
+    const amp = (0.25 + 1.5 * kk) * (1 - 0.7 * (1 - w));
+    const sw = e.mesh.userData.sway;
+    if (sw) {
+      const i = e.idx;
+      const arr = e.mesh.instanceMatrix.array;
+      const px = sw.sw[i * 4], pz = sw.sw[i * 4 + 1], py = sw.sw[i * 4 + 2], a = sw.sw[i * 4 + 3] * amp;
+      arr[i * 16 + 12] = sw.base[i * 16 + 12] + Math.sin(elapsed * 1.5 + px) * 0.05 * a;
+      arr[i * 16 + 13] = sw.base[i * 16 + 13] + Math.sin(elapsed * 2.2 + py) * 0.025 * a;
+      arr[i * 16 + 14] = sw.base[i * 16 + 14] + Math.cos(elapsed * 1.25 + pz) * 0.05 * a;
+    }
+  }
+}
+
+// ---- 灯光秀 A · 屋顶 LED 环带层 ----
+// 环带是单条 Tube（uv.x 沿管长 0..1），这里做两件事：
+//   1) 整体 emissiveIntensity 由编舞给定（黑场里那条横贯全宽的细亮带就是它）
+//   2) onBeforeCompile 注入沿 uv.x 的明暗分段，让白带阶段出现「分段跑马」的质感
+const _lsRibbonState = { mat: null, uniforms: null };
+export function ensureRibbonShader(mesh) {
+  if (!mesh || _lsRibbonState.mat === mesh.material) return _lsRibbonState;
+  const mat = mesh.material;
+  const uniforms = {
+    uLsMix: { value: 0 },
+    uLsWhite: { value: 0 },
+    // 分段数：素材里那条横带由「一排排等距灯点」组成（600px 内 78~120 个亮峰）。
+    // 环带 TubeGeometry 只有 360 段，64 段既能读出灯点感又不会走样。
+    uLsSeg: { value: 64 },
+    uLsPhase: { value: 0 },
+    uLsSegAmp: { value: 0.55 },
+  };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uLsMix = uniforms.uLsMix;
+    sh.uniforms.uLsWhite = uniforms.uLsWhite;
+    sh.uniforms.uLsSeg = uniforms.uLsSeg;
+    sh.uniforms.uLsPhase = uniforms.uLsPhase;
+    sh.uniforms.uLsSegAmp = uniforms.uLsSegAmp;
+    sh.vertexShader = 'varying float vLsU;\n' + sh.vertexShader.replace(
+      '#include <uv_vertex>',
+      '#include <uv_vertex>\n  vLsU = uv.x;',
+    );
+    sh.fragmentShader = 'varying float vLsU;\nuniform float uLsMix;\nuniform float uLsWhite;\nuniform float uLsSeg;\nuniform float uLsPhase;\nuniform float uLsSegAmp;\n' +
+      sh.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          // 分段明暗：奇数段压暗，形成沿环带的跑马灯纹理
+          float seg = fract(vLsU * uLsSeg + uLsPhase);
+          float segK = 1.0 - uLsSegAmp * smoothstep(0.42, 0.58, seg);
+          // 白带阶段整体去色（蓝 → 白）
+          vec3 cool = totalEmissiveRadiance;
+          vec3 neutral = vec3(dot(cool, vec3(0.2126, 0.7152, 0.0722)));
+          totalEmissiveRadiance = mix(cool, neutral * 1.15, uLsWhite * uLsMix) * mix(1.0, segK, uLsMix);
+        }`,
+      );
+  };
+  mat.needsUpdate = true;
+  _lsRibbonState.mat = mat;
+  _lsRibbonState.uniforms = uniforms;
+  return _lsRibbonState;
+}
+export function updateLightShowRibbon(mesh, R, elapsed) {
+  if (!mesh) return;
+  const st = ensureRibbonShader(mesh);
+  const U = st.uniforms;
+  const w = R ? clamp01(R.w) : 0;
+  U.uLsMix.value = w;
+  U.uLsWhite.value = R ? R.ribbon.white : 0;
+  U.uLsPhase.value = elapsed * 0.06;
+  // 注意：这里的振幅必须与 ensureRibbonShader 的初值一致（0.55），
+  // 否则初始化时的值永远被每帧覆盖成死参数，调参也无从生效。
+  U.uLsSegAmp.value = 0.55;
+  // 亮度：常态值（updateAtmosphere 刚写过，这里读回来）与编舞值之间的插值
+  const base = mesh.userData.lsBaseIntensity != null ? mesh.userData.lsBaseIntensity : mesh.material.emissiveIntensity;
+  const target = R ? R.ribbon.intensity : base;
+  mesh.material.emissiveIntensity = base * (1 - w) + target * w;
+}
+
+// ---- 灯光秀变体分派 ----
+// A = 全环应援棒 + 环带白带（js/lightshow.js）
+// B = 舞台中央单光团（js/lightshowb.js）
+// 两者都返回同一套 { w, sticks, ribbon, beam }，B 额外多一个 body/beam.blue。
+// 消费端（updateLights / updateAudience / updateLightShowRibbon）因此不用区分变体。
+export function lightShowOf(state, elapsed) {
+  if (!state || !state.lightShow) return null;
+  const t = state.lightShowT != null ? state.lightShowT : elapsed;
+  if (state.lightShowVariant === 'b') return lightShowBAt(t, DATA.concert.lightShowB);
+  return lightShowAt(t, DATA.concert.lightShow);
+}
+
+// ---- 灯光秀 B · 舞台 LED 大屏（居中光团本体）----
+// 素材 B 的观感核心就是这一块屏：先是近白的方光，转冷成蓝，面积随呼吸涨缩，
+// 内部有 6~10 条稀疏竖纹。这里用 onBeforeCompile 在自发光通道上叠
+// 「竖条明暗 × 蓝色调 × 编舞权重」，并用 emissiveIntensity 做整体亮度包络。
+const _sbBlue = new THREE.Color(0x5272ff);
+const _sbState = { mat: null, uniforms: null };
+export function ensureScreenShader(mat) {
+  if (!mat || _sbState.mat === mat) return _sbState;
+  if (mat.userData.sbBaseIntensity == null) mat.userData.sbBaseIntensity = mat.emissiveIntensity;
+  const uniforms = {
+    uSbMix: { value: 0 },
+    uSbTint: { value: 0 },
+    uSbStripe: { value: 0 },
+    uSbFreq: { value: 7 },
+    uSbPhase: { value: 0 },
+  };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uSbMix = uniforms.uSbMix;
+    sh.uniforms.uSbTint = uniforms.uSbTint;
+    sh.uniforms.uSbStripe = uniforms.uSbStripe;
+    sh.uniforms.uSbFreq = uniforms.uSbFreq;
+    sh.uniforms.uSbPhase = uniforms.uSbPhase;
+    const okFrag = sh.fragmentShader.includes('#include <emissivemap_fragment>');
+    const okVert = sh.vertexShader.includes('#include <uv_vertex>');
+    mat.userData.sbPatched = { frag: okFrag, vert: okVert };
+    sh.vertexShader = 'varying float vSbU;\n' + sh.vertexShader.replace(
+      '#include <uv_vertex>',
+      '#include <uv_vertex>\n  vSbU = uv.x;',
+    );
+    sh.fragmentShader = 'varying float vSbU;\nuniform float uSbMix;\nuniform float uSbTint;\nuniform float uSbStripe;\nuniform float uSbFreq;\nuniform float uSbPhase;\n' +
+      sh.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          // 竖条：沿 uv.x 的稀疏明暗带（素材里是 6~10 条等距竖纹）
+          float sbSeg = fract(vSbU * uSbFreq + uSbPhase);
+          float sbK = 1.0 - uSbStripe * uSbMix * smoothstep(0.34, 0.66, sbSeg);
+          // 关键：素材 B 的光体是「均匀发光的块 + 稀疏竖纹」，不是一张被调亮的画。
+          // 这里把贴图贡献（月夜海面）按 uSbMix 融掉，换成纯自发光 emissive
+          // （= emissive 颜色 × emissiveIntensity，由 JS 每帧写入），
+          // 否则屏上的海面纹理会一直透出来，颜色再蓝也读不成一个光团。
+          vec3 sbFlat = emissive;
+          totalEmissiveRadiance = mix(totalEmissiveRadiance, sbFlat, uSbMix);
+          // 冷 → 深蓝。素材 B 深蓝段的 RGB≈(95,99,160)，即 R≈G、B≈1.6R；
+          // 但屏面是 HDR + ACES，亮度一高就会被去饱和推向白，
+          // 所以 R/G 要压得很低才能在中段读出蓝，而不是靠整体提亮。
+          vec3 sbBlue = vec3(0.06, 0.13, 1.0);
+          vec3 sbTint = mix(vec3(1.0), sbBlue, uSbTint * uSbMix);
+          totalEmissiveRadiance *= sbTint * sbK;
+          // 底色一并压掉：B 模式下这块屏就是光源本身，不该再显示海面纹理
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.02, 0.03, 0.06), uSbMix);
+        }`,
+      );
+  };
+  mat.needsUpdate = true;
+  mat.userData.sbUniforms = uniforms; // 供 QA dump 读取真实 uniform 值
+  _sbState.mat = mat;
+  _sbState.uniforms = uniforms;
+  return _sbState;
+}
+
+// 灯光秀 B：驱动 LED 大屏本体。R 为空时（秀关闭）自动把参数收 0 并回常态亮度。
+export function updateLightShowBody(stage, R, elapsed) {
+  if (!stage) return;
+  const mat = stage.userData.ledMainMat;
+  if (!mat) return;
+  const st = ensureScreenShader(mat);
+  const U = st.uniforms;
+  const body = R ? R.body : null;
+  // 关键：占位权重必须由「本变体是否真的驱动这块屏」决定，而不是只看编舞权重 w。
+  // A 变体同样 w=1，但 A 不碰 LED 大屏；若直接用 w，uSbMix=1 会让片元里的
+  // diffuse * sbBlue 把 A 模式的屏也压成蓝调（实测确实会）。
+  const w = body ? clamp01(R.w) : 0;
+  U.uSbMix.value = w;
+  U.uSbTint.value = body ? body.tint : 0;
+  U.uSbStripe.value = body ? body.stripe : 0;
+  U.uSbFreq.value = body ? body.freq : 7;
+  U.uSbPhase.value = body ? body.phase : 0;
+  const base = mat.userData.sbBaseIntensity != null ? mat.userData.sbBaseIntensity : mat.emissiveIntensity;
+  const target = body ? body.gain : base;
+  mat.emissiveIntensity = base * (1 - w) + target * w;
+  // 面积脉冲：只缩放屏体与屏框自身（各自绕自己的中心），不动组的原点，
+  // 否则整块屏会连带位移，看着像镜头推进而不是灯在涨缩。
+  const s = 1 + (body ? (body.scale - 1) * w : 0);
+  const wallGrp = stage.getObjectByName('led-wall');
+  if (wallGrp) {
+    for (const m of wallGrp.children) {
+      if (m.name === 'screen-wall') continue;   // 背板不缩放，避免从屏前露出边缘
+      m.scale.set(s, s, 1);
+    }
   }
 }
 
@@ -1380,28 +1624,48 @@ export function updateAudience(group, elapsed, state) {
   const u = group.userData;
   const on = state.lampBanks;
   const pulse = 0.85 + 0.15 * Math.sin(elapsed * A.pulseSpeed);
+  const mode0 = state.audienceMode || 'normal';
+  // 灯光秀优先于一切观众光效：它自带六段编舞与权重，收尾时 w→0 自动交还常态
+  // 用 lightShowOf 分派 A/B 变体，两者都返回同一套 { w, sticks, ... } 契约
+  const LS = lightShowOf(state, elapsed);
+  const lsActive = !!(LS && LS.w > 0.001);
+  // 灭灯型光效（相遇 / 追逐）：观众只留被光效扫到的部分，悬空小方片也要压暗，
+  // 否则满场飘着的 700 片亮方块会把「灭灯」的对比冲淡。
+  const darkout = lsActive ? (LS.sticks.gain < 0.25) : DARKOUT_MODES.includes(mode0);
   u.glowMats.forEach((m, i) => {
     m.emissiveIntensity = on ? u.baseGlow[i] * pulse : 0.05;
   });
-  u.sqMat.opacity = on ? A.squares.opacity * (0.7 + 0.3 * pulse) : 0;
+  u.sqMat.opacity = on ? A.squares.opacity * (0.7 + 0.3 * pulse) * (darkout ? 0.30 : 1) : 0;
   u.cylInst.visible = on;
   u.crabInst.visible = on;
   u.sqInst.visible = on;
   if (on) {
-    const mode = state.audienceMode || 'normal';
-    if (mode === 'tide') {
+    const mode = mode0;
+    const W = DATA.concert.waveFx;
+    if (lsActive) {
+      // 灯光秀：三载体联动的看台层（整体底光 + 绕场行进的高亮带 / B 段只留微弱底光）
+      if (u.lastFx && u.lastFx !== 'lightshow') {
+        resetWave(u.cylInst); resetWave(u.crabInst);
+      }
+      u.waveWasOn = false;
+      applyLightShowEntries(u.pixelEntries || [], LS, elapsed);
+      dirtySticks(u.cylInst); dirtySticks(u.crabInst);
+      u.lastFx = 'lightshow';
+    } else if (WAVE_FX_MODES.includes(mode)) {
+      // 人浪光效：条纹 / 相遇 / 追逐 —— 逐实例写色 + 摇摆增幅随亮度
+      if (u.lastFx && u.lastFx !== mode && u.lastFx !== 'normal') {
+        // 从潮汐/波浪切过来：清掉上一模式的残留色与位移
+        resetWave(u.cylInst); resetWave(u.crabInst);
+      }
+      if (u.waveWasOn) { u.waveWasOn = false; }
+      applyWaveFxEntries(u.pixelEntries || [], mode, elapsed, W);
+      dirtySticks(u.cylInst); dirtySticks(u.crabInst);
+      u.lastFx = mode;
+    } else if (mode === 'tide') {
       // 潮汐人浪：亮度+物理高度绕碗体环形传播
       applyTideEntries(u.pixelEntries || [], elapsed);
       dirtySticks(u.cylInst); dirtySticks(u.crabInst);
       u.lastFx = 'tide';
-    } else if (mode === 'pixel') {
-      // 点阵显示：图案亮度 + 轻微摇摆
-      const shift = state.pixelScroll === false ? 0 : elapsed * A.pixel.scrollSpeed;
-      applyPixelEntries(u.pixelEntries || [], state.pixelPattern || 'heart', shift);
-      applySway(u.cylInst, elapsed, 0.03, 0.015, 0.03);
-      applySway(u.crabInst, elapsed, 0.035, 0.018, 0.035);
-      dirtySticks(u.cylInst); dirtySticks(u.crabInst);
-      u.lastFx = 'pixel';
     } else if (state.wave) {
       // 开场秀波浪：亮度波沿看台径向传播（setColorAt 逐实例）+ 摇摆随波峰增幅
       waveSway(u.cylInst, elapsed, state.wave, 0.055, 0.028, 0.055, false);
@@ -1409,17 +1673,18 @@ export function updateAudience(group, elapsed, state) {
       u.waveWasOn = true;
       u.lastFx = 'wave';
     } else {
-      if (u.lastFx === 'tide' || u.lastFx === 'pixel') { resetWave(u.cylInst); resetWave(u.crabInst); }
+      // normal 与 pixel 共用：点阵屏由内场插棒承担，外场不参与图案，
+      // 只保持常规呼吸摇摆（不压黑、不改色）
+      if (u.lastFx && u.lastFx !== 'normal') { resetWave(u.cylInst); resetWave(u.crabInst); }
       if (u.waveWasOn) { resetWave(u.cylInst); resetWave(u.crabInst); u.waveWasOn = false; }
       u.lastFx = 'normal';
       applySway(u.cylInst, elapsed, 0.055, 0.028, 0.055);
       applySway(u.crabInst, elapsed, 0.065, 0.032, 0.065);
     }
   }
-  // 小方片起伏旋转
-  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler();
-  const V = new THREE.Vector3(), SV = new THREE.Vector3(1, 1, 1);
+  // 小方片起伏旋转（临时对象提到模块级复用，避免每帧 new 4×700 次触发 GC 抖动）
   const t = elapsed * A.squares.bobSpeed;
+  const M = _flakeM, Q = _flakeQ, E = _flakeE, V = _flakeV, SV = _flakeSV;
   u.flakes.forEach((f, i) => {
     const y = f.y + Math.sin(t + f.phase) * A.squares.bobAmp;
     E.set(0.35, f.spin * t * 0.4 + f.phase, 0.2);
@@ -1441,7 +1706,9 @@ export function buildCrowd(gltfs) {
   const g = new THREE.Group();
   g.name = 'crowd';
 
-  // 1) 网格落点（行沿 z 面向舞台，列沿 x；避让延伸台/B 台的格子跳过）
+  // 1) 网格落点（行沿 z 面向舞台，列沿 x）。网格尺寸取自 pixel.js 的 pitGrid()，
+  //    它是点阵编址的唯一真相——保证「网格格数 == 插棒数」，点阵屏每格恰好一支棒。
+  const PG = pitGrid();
   const spots = [];
   for (let b = 0; b < C.pitBlocks; b++) {
     const zMax = C.pitFirstRowZ - b * (C.pitBlockDepth + C.pitBlockGap);
@@ -1449,8 +1716,9 @@ export function buildCrowd(gltfs) {
     const x1 = p.center.x + C.pitWidth / 2 - CR.blockMargin;
     const z0 = zMax - C.pitBlockDepth + CR.blockMargin;
     const z1 = zMax - CR.blockMargin;
-    const cols = Math.floor((x1 - x0) / CR.colSpacing);
-    const rows = Math.floor((z1 - z0) / CR.rowSpacing);
+    const cols = PG.cols;
+    const rows = PG.blocks[b].rows;
+    const base = PG.blocks[b].base;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const x = x0 + (cols === 1 ? (x1 - x0) / 2 : ((x1 - x0) * c) / (cols - 1))
@@ -1459,6 +1727,9 @@ export function buildCrowd(gltfs) {
           + (Math.random() * 2 - 1) * CR.rowJitter;
         spots.push({
           x, z,
+          // 点阵编址：col 沿 x、row 由 z 反推。r=0 最远离舞台 —— 让「远离舞台 = 行号小」，
+          // 于是图案行 0（顶部）落在最远离舞台的一排，与 aerial / sg-back 机位一致
+          col: c, row: PG.rows - 1 - (base + (rows - 1 - r)),
           yaw: CR.faceYaw + (Math.random() * 2 - 1) * CR.yawVar,
           hs: CR.scale * (1 + (Math.random() * 2 - 1) * CR.heightVar),
         });
@@ -1498,6 +1769,7 @@ export function buildCrowd(gltfs) {
   });
 
   // 3) 人模旁应援棒：右侧或正前方随机插地（圆柱/蟹钳与看台同资产、同灯光联动）
+  //    每支棒继承所归属格的 (col,row) —— 点阵屏就是这 1550 支棒，1 格 1 支
   const PS = CR.pitStick;
   const stageX = p.center.x, stageZ = S.goalLineSouthZ + 6;
   const pitCylSpots = [], pitClawSpots = [];
@@ -1507,7 +1779,10 @@ export function buildCrowd(gltfs) {
     const front = Math.random() < 0.5;
     const x = sp.x + (front ? fx * PS.frontOffset : rx * PS.rightOffset) + (Math.random() * 2 - 1) * 0.06;
     const z = sp.z + (front ? fz * PS.frontOffset : rz * PS.rightOffset) + (Math.random() * 2 - 1) * 0.06;
-    const base = { x, z, y: blockTop, tiltX: (Math.random() * 2 - 1) * PS.tiltMax };
+    const base = {
+      x, z, y: blockTop, tiltX: (Math.random() * 2 - 1) * PS.tiltMax,
+      col: sp.col, row: sp.row,
+    };
     if (Math.random() < PS.clawRatio) {
       pitClawSpots.push({ ...base, yaw: Math.atan2(stageX - x, stageZ - z) + (Math.random() * 2 - 1) * 0.5 });
     } else {
@@ -1535,13 +1810,21 @@ export function buildCrowd(gltfs) {
   const pitCyl = mkPit(assets.cylGeo, [assets.shellC, assets.glowC], pitCylSpots, 'pit-sticks-cyl');
   const pitClaw = mkPit(assets.clawGeo, [assets.shellK, assets.glowK], pitClawSpots, 'pit-sticks-claw');
   g.userData.pitSticks = [pitCyl, pitClaw];
-  // 内场插棒也纳入潮汐/点阵寻址
+  // 点阵编址：内场插棒就是点阵屏本体（50 列 × 31 排 = 1550 格，1 格 1 支）。
+  // row 0 = 图案上方（离舞台最远的一排），col 0 = 屏幕左侧（aerial / sg-back 机位下为正）。
+  // theta 仍保留给潮汐模式（潮位绕碗体环形传播）；u/s 给人浪光效：
+  //   u = 列归一化 0..1
+  //   s = 距最近一侧的归一化距离 0..1（0 = 舞台两翼，1 = 中线相遇处）
+  //       内场是矩形，没有"环"，所以相遇光效在这里表现为「左右两股向中线推进」。
   const mkEntries = (inst, list) => list.map((sp, i) => ({
-    mesh: inst, idx: i,
+    mesh: inst, idx: i, col: sp.col, row: sp.row,
     theta: Math.atan2(sp.z - S.bowl.centerZ, sp.x - S.bowl.centerX),
-    row: 0,
+    u: PG.cols === 1 ? 0.5 : sp.col / (PG.cols - 1),
+    s: PG.cols === 1 ? 1 : Math.min(1, Math.min(sp.col, PG.cols - 1 - sp.col) / ((PG.cols - 1) / 2)),
   }));
   g.userData.pixelEntries = [...mkEntries(pitCyl, pitCylSpots), ...mkEntries(pitClaw, pitClawSpots)];
+  g.userData.pixelSticks = pitCylSpots.length + pitClawSpots.length;
+  g.userData.pixelGrid = { cols: PG.cols, rows: PG.rows };
 
   g.userData.count = spots.length;
   console.log('[crowd] instances:', spots.length, '| pit sticks:', pitCylSpots.length + pitClawSpots.length);
@@ -1549,30 +1832,45 @@ export function buildCrowd(gltfs) {
 }
 
 // 内场更新：人模微晃（呼吸/踮步感）；插棒随特效模式切换——
-// 潮汐（随环形潮位起伏+变色）/ 点阵（压暗聚焦看台）/ 波浪 / 常规
+// 点阵（内场插棒即点阵屏，逐格写图案色）/ 潮汐（环形潮位起伏+变色）/ 波浪 / 常规
 export function updateCrowd(group, elapsed, state) {
   const on = state ? state.lampBanks : true;
   const mode = on ? (state.audienceMode || 'normal') : 'off';
   const wave = state ? state.wave : null;
   const entries = group.userData.pixelEntries || [];
+  const AP = DATA.concert.crowd.pixel;
+  const W = DATA.concert.waveFx;
+  const isFx = WAVE_FX_MODES.includes(mode);
   for (const child of group.children) {
     if (!child.isInstancedMesh || !child.userData.sway) continue;
     if (child.name.startsWith('pit-')) {
       child.visible = on;
       if (!on) continue;
-      if (mode === 'tide') {
+      if (isFx) {
+        // 人浪光效：内场插棒按列 u / 距边距离 s 逐支上色
+        if (child.userData.fxOn && child.userData.fxOn !== mode && child.userData.fxOn !== 'normal') {
+          resetWave(child);
+        }
+        applyWaveFxEntries(entries.filter((e) => e.mesh === child), mode, elapsed, W);
+        dirtySticks(child);
+        child.userData.fxOn = mode;
+      } else if (mode === 'tide') {
         applyTideEntries(entries.filter((e) => e.mesh === child), elapsed);
         dirtySticks(child);
         child.userData.fxOn = 'tide';
       } else if (mode === 'pixel') {
-        if (child.userData.fxOn !== 'pixel') {
-          const col = new THREE.Color().setScalar(DATA.concert.audience.pixel.pitDim);
-          for (let i = 0; i < child.count; i++) child.setColorAt(i, col);
-          child.instanceColor.needsUpdate = true;
-          child.userData.fxOn = 'pixel';
-        }
+        // 点阵屏：每帧按 (row,col) 写三档亮度 —— 主体 / 边缘 / 底光
+        // 横向动效 = 绕中心的**有界往复摆动**（不再用 elapsed * scrollSpeed 单向漂移，
+        // 否则几十秒后图案会歪到屏幕一侧并跨边界被回卷切断）
+        const shift = state.pixelShift != null ? state.pixelShift
+          : (state.pixelScroll === false ? 0
+            : Math.round(AP.swayAmp * Math.sin((elapsed / AP.swayPeriod) * Math.PI * 2)));
+        applyPixelEntries(entries.filter((e) => e.mesh === child), state.pixelPattern || 'heart', shift);
+        dirtySticks(child);
+        applySway(child, elapsed, 0.02, 0.010, 0.02);
+        child.userData.fxOn = 'pixel';
       } else {
-        if (child.userData.fxOn === 'pixel') resetWave(child);
+        if (child.userData.fxOn && child.userData.fxOn !== 'normal') resetWave(child);
         child.userData.fxOn = 'normal';
         if (wave) waveSway(child, elapsed, wave, 0.05, 0.025, 0.05, false);
         else applySway(child, elapsed, 0.05, 0.025, 0.05);
@@ -1687,6 +1985,165 @@ export function buildSinger(gltf) {
 
 export function updateSinger(group, dt) {
   group.userData.mixer.update(dt);
+}
+
+// ---------- 伴奏乐队：舞台两侧的体素乐器 ----------
+// 模型来自 sandbox/band-lab（Blender 体素建模 → glTF），已拷进 assets/band/。
+// 每件乐器原点在底面中心、正面朝 -Z，所以摆位只需 (x, 台面高, z) + 绕 Y 偏航，无需再补偏移。
+// 材质必须做三处修正（否则在主场馆光照下不可读）：
+//   1) 无环境贴图 → metalness 高的银/铜件渲染成纯黑，压到 ≤ metalnessMax；
+//   2) 近白材质（琴键）在近场补光下顶到 255 糊成白板，按固有色亮度等比压暗；
+//   3) 加一点自发光底光，暗场里不只剩黑色剪影。
+export function buildBand(gltfs, crowdGltfs) {
+  const B = DATA.concert.band;
+  const g = new THREE.Group();
+  g.name = 'band';
+  const deckY = B.deckY != null ? B.deckY : SA.deckTop + DATA.concert.stageV2.h;
+  const items = [];
+
+  gltfs.forEach((gltf, i) => {
+    const lay = B.items[i];
+    if (!gltf || !lay) return;
+    const root = new THREE.Group();
+    root.name = `band-${lay.id}`;
+    const model = gltf.scene;
+    model.scale.setScalar(B.scale);
+    root.add(model);
+    root.position.set(SA.cx + lay.x, deckY, lay.z);
+    root.rotation.y = THREE.MathUtils.degToRad(lay.yaw);
+    g.add(root);
+
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m) continue;
+        if (m.metalness !== undefined) m.metalness = Math.min(m.metalness, B.metalnessMax);
+        if (m.roughness !== undefined) m.roughness = Math.max(B.roughnessMin, Math.min(1, m.roughness));
+        m.envMapIntensity = 0.7;
+        if (m.color) {
+          const lum = 0.2126 * m.color.r + 0.7152 * m.color.g + 0.0722 * m.color.b;
+          if (lum > B.whiteLum) m.color.multiplyScalar(B.whiteMul);
+        }
+        if (m.emissive) {
+          m.emissive.set(B.emissive);
+          m.emissiveIntensity = B.emissiveIntensity;
+        }
+      }
+      if (o.geometry) sanitizeNormals(o.geometry);
+    });
+    items.push({ id: lay.id, root, label: lay.label });
+  });
+
+  // 乐手：复用内场人模（crowd_a / crowd_b），站在各自乐器旁/后。
+  // 人模 GLB 原点在身体中部（min.y ≈ -0.494），所以先按缩放后的包围盒把脚底落到台面，
+  // 再按 yaw 转向观众；材质必须 clone —— 否则改 color 会连内场 1550 个人模一起变暗。
+  const performers = [];
+  const byModel = {};
+  (crowdGltfs || []).forEach((gltf, i) => { if (gltf) byModel[i === 0 ? 'crowd_a' : 'crowd_b'] = gltf; });
+  for (const spec of B.performers || []) {
+    const src = byModel[spec.model];
+    if (!src) continue;
+    const root = new THREE.Group();
+    root.name = `band-${spec.id}`;
+    // 前倾支点：必须挂在脚底高度，否则绕身体中心转会把脚也甩出去（人会滑步）
+    const leanPivot = new THREE.Group();
+    leanPivot.name = `${root.name}-lean`;
+    root.add(leanPivot);
+    const model = src.scene.clone(true);
+    model.scale.setScalar(B.performerScale);
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      o.material = Array.isArray(o.material) ? mats.map(cloneBandMat) : cloneBandMat(mats[0]);
+      if (o.geometry) sanitizeNormals(o.geometry);
+    });
+    // 脚底落地：包围盒在 root 局部空间算（此时尚未平移，只含缩放后的 model）
+    const box = new THREE.Box3().setFromObject(model);
+    model.position.y -= box.min.y;
+    leanPivot.add(model);
+    // 上身前倾：绕**脚底**的 Z 轴旋转（在 root 局部空间里，人模正面朝 +X）。
+    // 实测标定（tools/_lean2.mjs）：pivot.rotation.z = -lean 时头顶位移为 (0, -0.035, -0.332)，
+    // 即朝世界 -Z = 朝观众方向压下去，正是"俯身演奏"的姿态；绕 X 轴转只会左右歪（dx=±0.333）。
+    // 支点挂在脚底高度（leanPivot 原点 = root 原点 = 台面），否则绕身体中心转会把脚甩出去、人像在滑步。
+    leanPivot.rotation.z = -THREE.MathUtils.degToRad(spec.lean || 0);
+    root.position.set(SA.cx + spec.x, deckY, spec.z);
+    root.rotation.y = THREE.MathUtils.degToRad(spec.yaw);
+    // 前倾会让身体外缘越过脚底平面（12° 时最低点比台面低约 8cm，鞋会陷进台面）。
+    // 用世界包围盒回补一次，保证最低点精确落在台面上。
+    root.updateMatrixWorld(true);
+    const wb = new THREE.Box3().setFromObject(root);
+    root.position.y += deckY - wb.min.y;
+    g.add(root);
+    performers.push({
+      id: spec.id, label: spec.label, root, leanPivot,
+      baseYaw: THREE.MathUtils.degToRad(spec.yaw),
+      baseY: root.position.y,   // 含前倾补偿后的落脚高度，updateBand 以此为基准做上下微浮
+      baseLean: THREE.MathUtils.degToRad(spec.lean || 0),
+      sway: spec.sway || B.performerSway,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+
+  // 乐队区补光：观众侧接近水平的窄锥 SpotLight，只擦过台面、主要打在乐器立面上。
+  // （顶光点光会把 60×24m 台面整片照亮，实测台面 46→143，乐器反而被压掉）
+  const F = B.fill;
+  const fills = [];
+  for (const spec of F.spots) {
+    const l = new THREE.SpotLight(F.color, F.intensity, F.distance, F.angle, F.penumbra, F.decay);
+    l.position.set(SA.cx + spec.x, deckY + F.lift, spec.z);
+    l.target.position.set(SA.cx + spec.tx, deckY + F.aimLift, spec.tz);
+    l.castShadow = false;
+    g.add(l, l.target);
+    fills.push({ light: l, base: F.intensity });
+  }
+
+  g.userData.items = items;
+  g.userData.performers = performers;
+  g.userData.fills = fills;
+  g.userData.deckY = deckY;
+  return g;
+}
+
+// 乐手材质：贴图接近白，在暖白近场补光下会整片溢出成白块，整体压暗一档；
+// 压掉金属度（无环境贴图）保证衣服固有色在任何灯下都读得出来。
+function cloneBandMat(src) {
+  if (!src) return src;
+  const B = DATA.concert.band;
+  const m = src.clone();
+  if (m.metalness !== undefined) m.metalness = 0;
+  if (m.roughness !== undefined) m.roughness = 0.92;
+  m.envMapIntensity = 0.7;
+  if (m.color) m.color.multiplyScalar(B.performerColorMul);
+  return m;
+}
+
+// 乐队补光随灯光状态缩放（与全场 dimmer / 灯组开关联动，避免乐队在暗场里"过曝独立"）
+export function updateBand(group, elapsed, state) {
+  const U = group.userData;
+  const B = DATA.concert.band;
+  // 底限 0.35：开场秀倒计时会把 dimmer 压到 0.2、灯组也会关掉，
+  // 但乐队不能跟着全黑（那 6 件乐器是舞台布景的一部分，纯黑会显得舞台"缺了一块"）
+  const k = Math.max(0.35, (state.dimmer ?? 1) * (state.lampBanks ? 1 : 0.55));
+  for (const f of U.fills) f.light.intensity = f.base * k;
+  // 乐手的「演奏」律动：三层叠加、频率互不相同，避免整体像机械人同步摆动。
+  //   ① 前倾角呼吸（绕脚底 X 轴）：随节拍前后压身 —— 这是"在演奏"最关键的信号；
+  //   ② 绕 Y 微转：身体跟着琴颈/鼓点轻摇；
+  //   ③ 上下微浮：随重音顶一下。
+  for (const p of U.performers) {
+    const s = Math.sin(elapsed * p.sway + p.phase);
+    const s2 = Math.sin(elapsed * p.sway * 2 + p.phase * 1.7);
+    p.root.rotation.y = p.baseYaw + s * B.performerSwayYaw;
+    p.root.position.y = p.baseY + Math.abs(s2) * B.performerSwayBob;
+    if (p.leanPivot) {
+      // 与静态前倾同一根轴（局部 Z），负角 = 朝观众压身
+      p.leanPivot.rotation.z = -(p.baseLean + (0.5 + 0.5 * s2) * B.performerLeanAmp);
+    }
+  }
 }
 
 // 地坪顶面材质：Canvas 分格线 + 噪点

@@ -1,14 +1,32 @@
-# 本地工作区配置
+# ---------- 本地工作区配置 ----------
 .zcode/
 
-# QA 过程截图（83MB 过程产物，验收图不入库）
+# ---------- QA 过程截图（约 90 MB，验收图不入库） ----------
+# preview/ 下按主题分目录：stage/ wave/ pixel/ audience/ singer/
+# lightshow-a/ lightshow-b/ walk/ ui/ qa/ misc/ sequence/
 preview/
 
-# 范式文档参考材料（版权归原文档方，不公开分发）
+# ---------- 参考材料（版权归原方，不公开分发） ----------
 paradigm.txt
 paradigm_imgs/
+sandbox/band-lab/refs/
 
-# 本地临时文件
+# ---------- 临时文件与缓存 ----------
 *.log
 .qacheck/
 sandbox/*.blend*
+__pycache__/
+*.pyc
+*.npy
+
+# ---------- 一次性调试脚本存档（保留本地，不入库） ----------
+tools/scratch/
+
+# ---------- 沙盒渲染产物（可由 tools/ 重新生成） ----------
+sandbox/band-lab/render/
+sandbox/band-lab/preview/
+sandbox/band-lab/fourview/
+sandbox/band-lab/shots/
+
+# ---------- 点阵验收中间产物（由 tools/export_sticks.mjs 生成，可随时重跑） ----------
+tools/_sticks.json

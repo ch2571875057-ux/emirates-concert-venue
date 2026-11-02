@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>乐队乐器模型 — 预览图册</title>
+<style>
+  :root { --bg:#0e1117; --card:#161b24; --line:#28303d; --text:#e6ecf6;
+          --dim:#8b98ad; --accent:#4f8bff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.7 "Microsoft YaHei","PingFang SC",system-ui,sans-serif; }
+  header { padding:34px 40px 18px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 6px; font-size:25px; font-weight:600; }
+  header p { margin:0; color:var(--dim); font-size:14px; }
+  nav { position:sticky; top:0; z-index:9; padding:12px 40px;
+        background:rgba(14,17,23,.95); border-bottom:1px solid var(--line); }
+  nav a { margin-right:20px; color:var(--dim); text-decoration:none; font-size:14px; }
+  nav a:hover { color:var(--text); }
+  section { padding:32px 40px 8px; }
+  h2 { font-size:19px; font-weight:600; margin:0 0 4px; }
+  h2 span { color:var(--dim); font-size:13px; font-weight:400; margin-left:10px; }
+  .note { color:var(--dim); font-size:13px; margin:0 0 20px; }
+  .grid { display:grid; gap:16px; }
+  .g3 { grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+  .g2 { grid-template-columns:repeat(auto-fill,minmax(460px,1fr)); }
+  figure { margin:0; background:var(--card); border:1px solid var(--line);
+           border-radius:10px; overflow:hidden; }
+  figure a { display:block; }
+  img { display:block; width:100%; height:auto; background:#0a0d13; }
+  figcaption { padding:9px 13px; font-size:13.5px; }
+  figcaption em { display:block; color:var(--dim); font-size:12px;
+                  font-style:normal; margin-top:2px; }
+  .full { padding:0 40px 24px; }
+  .full img { border:1px solid var(--line); border-radius:10px; }
+  footer { padding:24px 40px 48px; color:var(--dim); font-size:13px;
+           border-top:1px solid var(--line); }
+  code { color:#9ec1ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>乐队乐器模型 · 预览图册</h1>
+  <p>9 件乐器 / 7 种模型 · Minecraft 体素风格 · 体素边长 5 cm · 13 色调色板 · 共 5974 三角面</p>
+</header>
+<nav>
+  <a href="#overview">总览</a>
+  <a href="#render">Blender 渲染</a>
+  <a href="#shots">沙盒截图</a>
+  <a href="#fourview">四视图</a>
+  <a href="#howto">怎么看实时场景</a>
+</nav>
+<section id="overview">
+  <h2>总览 <span>点图可看原尺寸 PNG</span></h2>
+  <p class="note">上：Blender Cycles 精渲染。下：Three.js 沙盒页实时截图。</p>
+</section>
+<div class="full"><a href="preview/render_sheet.png" target="_blank"><img src="preview/web/sheet_render.jpg" alt="Blender 渲染总览"></a></div>
+<div class="full"><a href="preview/shots_sheet.png" target="_blank"><img src="preview/web/sheet_shots.jpg" alt="沙盒截图总览"></a></div>
+<section id="render">
+  <h2>Blender Cycles 渲染 <span>每件 3/4 视角、正视、侧视</span></h2>
+  <p class="note">高清精渲染，用于判断造型与比例是否准确。</p>
+  <div class="grid g3">
+    <figure><a href="preview/web/render__drums_p1.jpg" target="_blank"><img src="preview/web/render__drums_p1.jpg" alt="架子鼓 · 3/4 视角" loading="lazy"></a>
+      <figcaption>架子鼓 · 3/4 视角<em>2.20 × 1.40 × 1.70 m ／ 1306 体素，5 鼓 3 镲 + 鼓凳 + 鼓台</em></figcaption></figure>
+    <figure><a href="preview/web/render__drums_front.jpg" target="_blank"><img src="preview/web/render__drums_front.jpg" alt="架子鼓 · 正视" loading="lazy"></a>
+      <figcaption>架子鼓 · 正视<em>2.20 × 1.40 × 1.70 m ／ 1306 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__drums_side.jpg" target="_blank"><img src="preview/web/render__drums_side.jpg" alt="架子鼓 · 侧视" loading="lazy"></a>
+      <figcaption>架子鼓 · 侧视<em>2.20 × 1.40 × 1.70 m ／ 1306 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__guitar_p1.jpg" target="_blank"><img src="preview/web/render__guitar_p1.jpg" alt="电吉他 · 3/4 视角" loading="lazy"></a>
+      <figcaption>电吉他 · 3/4 视角<em>0.40 × 1.25 × 0.30 m ／ 169 体素，落地琴架，琴体正面朝观众</em></figcaption></figure>
+    <figure><a href="preview/web/render__guitar_front.jpg" target="_blank"><img src="preview/web/render__guitar_front.jpg" alt="电吉他 · 正视" loading="lazy"></a>
+      <figcaption>电吉他 · 正视<em>0.40 × 1.25 × 0.30 m ／ 169 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__guitar_side.jpg" target="_blank"><img src="preview/web/render__guitar_side.jpg" alt="电吉他 · 侧视" loading="lazy"></a>
+      <figcaption>电吉他 · 侧视<em>0.40 × 1.25 × 0.30 m ／ 169 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__bass_p1.jpg" target="_blank"><img src="preview/web/render__bass_p1.jpg" alt="电贝斯 · 3/4 视角" loading="lazy"></a>
+      <figcaption>电贝斯 · 3/4 视角<em>0.40 × 1.45 × 0.30 m ／ 175 体素，落地琴架，黑亮漆琴体</em></figcaption></figure>
+    <figure><a href="preview/web/render__bass_front.jpg" target="_blank"><img src="preview/web/render__bass_front.jpg" alt="电贝斯 · 正视" loading="lazy"></a>
+      <figcaption>电贝斯 · 正视<em>0.40 × 1.45 × 0.30 m ／ 175 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__bass_side.jpg" target="_blank"><img src="preview/web/render__bass_side.jpg" alt="电贝斯 · 侧视" loading="lazy"></a>
+      <figcaption>电贝斯 · 侧视<em>0.40 × 1.45 × 0.30 m ／ 175 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__keys_p1.jpg" target="_blank"><img src="preview/web/render__keys_p1.jpg" alt="双层键盘 · 3/4 视角" loading="lazy"></a>
+      <figcaption>双层键盘 · 3/4 视角<em>1.00 × 1.10 × 0.75 m ／ 570 体素，琴架 + 延音踏板，上层 1.30 m</em></figcaption></figure>
+    <figure><a href="preview/web/render__keys_front.jpg" target="_blank"><img src="preview/web/render__keys_front.jpg" alt="双层键盘 · 正视" loading="lazy"></a>
+      <figcaption>双层键盘 · 正视<em>1.00 × 1.10 × 0.75 m ／ 570 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__keys_side.jpg" target="_blank"><img src="preview/web/render__keys_side.jpg" alt="双层键盘 · 侧视" loading="lazy"></a>
+      <figcaption>双层键盘 · 侧视<em>1.00 × 1.10 × 0.75 m ／ 570 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__amp_p1.jpg" target="_blank"><img src="preview/web/render__amp_p1.jpg" alt="吉他音箱堆 · 3/4 视角" loading="lazy"></a>
+      <figcaption>吉他音箱堆 · 3/4 视角<em>0.80 × 1.00 × 0.40 m ／ 1000 体素，箱头 + 4×12 单元</em></figcaption></figure>
+    <figure><a href="preview/web/render__amp_front.jpg" target="_blank"><img src="preview/web/render__amp_front.jpg" alt="吉他音箱堆 · 正视" loading="lazy"></a>
+      <figcaption>吉他音箱堆 · 正视<em>0.80 × 1.00 × 0.40 m ／ 1000 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__amp_side.jpg" target="_blank"><img src="preview/web/render__amp_side.jpg" alt="吉他音箱堆 · 侧视" loading="lazy"></a>
+      <figcaption>吉他音箱堆 · 侧视<em>0.80 × 1.00 × 0.40 m ／ 1000 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__ampbass_p1.jpg" target="_blank"><img src="preview/web/render__ampbass_p1.jpg" alt="贝斯一体音箱 · 3/4 视角" loading="lazy"></a>
+      <figcaption>贝斯一体音箱 · 3/4 视角<em>0.65 × 0.75 × 0.40 m ／ 612 体素，4×10 一体式</em></figcaption></figure>
+    <figure><a href="preview/web/render__ampbass_front.jpg" target="_blank"><img src="preview/web/render__ampbass_front.jpg" alt="贝斯一体音箱 · 正视" loading="lazy"></a>
+      <figcaption>贝斯一体音箱 · 正视<em>0.65 × 0.75 × 0.40 m ／ 612 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__ampbass_side.jpg" target="_blank"><img src="preview/web/render__ampbass_side.jpg" alt="贝斯一体音箱 · 侧视" loading="lazy"></a>
+      <figcaption>贝斯一体音箱 · 侧视<em>0.65 × 0.75 × 0.40 m ／ 612 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__micstand_p1.jpg" target="_blank"><img src="preview/web/render__micstand_p1.jpg" alt="麦克风架 · 3/4 视角" loading="lazy"></a>
+      <figcaption>麦克风架 · 3/4 视角<em>0.95 × 1.80 × 0.35 m ／ 116 体素，空置，斜杆指向主唱侧</em></figcaption></figure>
+    <figure><a href="preview/web/render__micstand_front.jpg" target="_blank"><img src="preview/web/render__micstand_front.jpg" alt="麦克风架 · 正视" loading="lazy"></a>
+      <figcaption>麦克风架 · 正视<em>0.95 × 1.80 × 0.35 m ／ 116 体素</em></figcaption></figure>
+    <figure><a href="preview/web/render__micstand_side.jpg" target="_blank"><img src="preview/web/render__micstand_side.jpg" alt="麦克风架 · 侧视" loading="lazy"></a>
+      <figcaption>麦克风架 · 侧视<em>0.95 × 1.80 × 0.35 m ／ 116 体素</em></figcaption></figure>
+  </div>
+</section>
+<section id="shots">
+  <h2>沙盒实时截图 <span>Three.js + GLB，1600×1000</span></h2>
+  <p class="note">真正要合入主项目的渲染管线，光照与主项目同调。</p>
+  <div class="grid g2">
+    <figure><a href="preview/web/shots__front.jpg" target="_blank"><img src="preview/web/shots__front.jpg" alt="正视（观众视角）" loading="lazy"></a>
+      <figcaption>正视（观众视角）</figcaption></figure>
+    <figure><a href="preview/web/shots__front45.jpg" target="_blank"><img src="preview/web/shots__front45.jpg" alt="45° 俯视" loading="lazy"></a>
+      <figcaption>45° 俯视</figcaption></figure>
+    <figure><a href="preview/web/shots__top.jpg" target="_blank"><img src="preview/web/shots__top.jpg" alt="顶视" loading="lazy"></a>
+      <figcaption>顶视</figcaption></figure>
+    <figure><a href="preview/web/shots__left.jpg" target="_blank"><img src="preview/web/shots__left.jpg" alt="左侧" loading="lazy"></a>
+      <figcaption>左侧</figcaption></figure>
+    <figure><a href="preview/web/shots__right.jpg" target="_blank"><img src="preview/web/shots__right.jpg" alt="右侧" loading="lazy"></a>
+      <figcaption>右侧</figcaption></figure>
+    <figure><a href="preview/web/shots__back.jpg" target="_blank"><img src="preview/web/shots__back.jpg" alt="背视" loading="lazy"></a>
+      <figcaption>背视</figcaption></figure>
+    <figure><a href="preview/web/shots__focus_drums.jpg" target="_blank"><img src="preview/web/shots__focus_drums.jpg" alt="特写 · 架子鼓" loading="lazy"></a>
+      <figcaption>特写 · 架子鼓</figcaption></figure>
+    <figure><a href="preview/web/shots__focus_keys.jpg" target="_blank"><img src="preview/web/shots__focus_keys.jpg" alt="特写 · 双层键盘" loading="lazy"></a>
+      <figcaption>特写 · 双层键盘</figcaption></figure>
+    <figure><a href="preview/web/shots__focus_amp.jpg" target="_blank"><img src="preview/web/shots__focus_amp.jpg" alt="特写 · 吉他音箱" loading="lazy"></a>
+      <figcaption>特写 · 吉他音箱</figcaption></figure>
+    <figure><a href="preview/web/shots__focus_micstand.jpg" target="_blank"><img src="preview/web/shots__focus_micstand.jpg" alt="特写 · 麦克风架" loading="lazy"></a>
+      <figcaption>特写 · 麦克风架</figcaption></figure>
+    <figure><a href="preview/web/shots__solid.jpg" target="_blank"><img src="preview/web/shots__solid.jpg" alt="素模材质（看整体体块）" loading="lazy"></a>
+      <figcaption>素模材质（看整体体块）</figcaption></figure>
+    <figure><a href="preview/web/shots__wire.jpg" target="_blank"><img src="preview/web/shots__wire.jpg" alt="线框 · 鼓特写（看体素密度）" loading="lazy"></a>
+      <figcaption>线框 · 鼓特写（看体素密度）</figcaption></figure>
+    <figure><a href="preview/web/shots__ui.jpg" target="_blank"><img src="preview/web/shots__ui.jpg" alt="带 HUD 面板" loading="lazy"></a>
+      <figcaption>带 HUD 面板</figcaption></figure>
+  </div>
+</section>
+<section id="fourview">
+  <h2>四视图 <span>正/背/顶/左/右 + 参考原图并排</span></h2>
+  <p class="note">建模阶段用来对照参考图的中间产物。</p>
+  <div class="grid g2">
+    <figure><a href="preview/web/fourview__drums_fourview.jpg" target="_blank"><img src="preview/web/fourview__drums_fourview.jpg" alt="架子鼓" loading="lazy"></a>
+      <figcaption>架子鼓</figcaption></figure>
+    <figure><a href="preview/web/fourview__guitar_fourview.jpg" target="_blank"><img src="preview/web/fourview__guitar_fourview.jpg" alt="电吉他" loading="lazy"></a>
+      <figcaption>电吉他</figcaption></figure>
+    <figure><a href="preview/web/fourview__bass_fourview.jpg" target="_blank"><img src="preview/web/fourview__bass_fourview.jpg" alt="电贝斯" loading="lazy"></a>
+      <figcaption>电贝斯</figcaption></figure>
+    <figure><a href="preview/web/fourview__keys_fourview.jpg" target="_blank"><img src="preview/web/fourview__keys_fourview.jpg" alt="双层键盘" loading="lazy"></a>
+      <figcaption>双层键盘</figcaption></figure>
+    <figure><a href="preview/web/fourview__amp_fourview.jpg" target="_blank"><img src="preview/web/fourview__amp_fourview.jpg" alt="吉他音箱堆" loading="lazy"></a>
+      <figcaption>吉他音箱堆</figcaption></figure>
+    <figure><a href="preview/web/fourview__ampbass_fourview.jpg" target="_blank"><img src="preview/web/fourview__ampbass_fourview.jpg" alt="贝斯一体音箱" loading="lazy"></a>
+      <figcaption>贝斯一体音箱</figcaption></figure>
+    <figure><a href="preview/web/fourview__micstand_fourview.jpg" target="_blank"><img src="preview/web/fourview__micstand_fourview.jpg" alt="麦克风架" loading="lazy"></a>
+      <figcaption>麦克风架</figcaption></figure>
+  </div>
+</section>
+<section id="howto">
+  <h2>怎么看实时三维场景</h2>
+  <p class="note">
+    本图册是静态图片，双击打开即可，<b>不需要服务器</b>。<br>
+    要在浏览器里转着看三维场景：双击 <code>打开乐队沙盒.bat</code>，它会自动起本地服务器并打开页面。<br>
+    注意：直接双击 <code>index.html</code> 会白屏 —— 浏览器禁止从 <code>file://</code> 加载 ES 模块和 .glb 模型，必须走 http。
+  </p>
+</section>
+<footer>乐队沙盒 · <code>sandbox/band-lab/</code> · 全部为新增文件，主项目 <code>index.html</code> / <code>js/*.js</code> / <code>assets/*</code> 零改动</footer>
+</body>
+</html>

@@ -10,7 +10,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { DATA } from './data.js';
-import { convertGLB, updateLights, updateAudience, updateCrowd, buildCrowd, buildSinger, updateSinger } from './stadium.js';
+import { convertGLB, updateLights, updateAudience, updateCrowd, buildCrowd, buildSinger, updateSinger, buildBand, updateBand, updateLightShowRibbon, ensureRibbonShader, updateLightShowBody, lightShowOf } from './stadium.js';
+import { pitGrid } from './pixel.js';
+import { lightShowAt, lightShowDuration, lightShowPhaseAt, LS_PHASES } from './lightshow.js';
+import { lightShowBAt, lightShowBDuration, lightShowBPhaseAt, LSB_PHASES } from './lightshowb.js';
 import { ShowManager, Fireworks } from './show.js';
 
 // ---------- URL 参数 ----------
@@ -79,14 +82,26 @@ composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
 // ---------- GLB 加载（主场景 + 两个人模一并就绪后再建场景，QA 截图稳定） ----------
+let stadiumGroup = null;
 let lightsGroup = null;
 let audienceGroup = null;
 let crowdGroup = null;
 let singerGroup = null;
+let bandGroup = null;
 let skyMesh = null;
 let ribbonMesh = null;
 let show = null;
-const lightState = { mode: 'sweep', lampBanks: true, audienceMode: 'normal', pixelPattern: 'heart', pixelScroll: true };
+let lsStageEl = null; // 灯光秀阶段指示（HUD 建好后赋值，tick 里刷新）
+let lsLastPhase = '';
+// 阶段中文名：tick() 每帧要用，必须放在模块作用域（放在 buildHUD 里会 ReferenceError
+// → tick 抛异常 → requestAnimationFrame 断链，表现为「打开灯光秀后页面直接卡死」）
+const LS_PHASE_LABEL = {
+  // A：全环应援棒 + 环带白带
+  breath: '起势', burst: '爆发', collapse: '收束', black: '暗场', band: '白带', fall: '回落',
+  // B：舞台中央光团
+  ignite: '点亮', flash: '闪白', cool: '转冷', blue: '深蓝', stripe: '竖纹', fade: '隐去',
+};
+const lightState = { mode: 'sweep', lampBanks: true, audienceMode: 'normal', pixelPattern: 'heart', pixelScroll: true, lightShow: false, lightShowT: 0, lightShowVariant: 'a' };
 const sceneState = { lightsOff: false };
 const bytesTotal = 2680000; // 粗略总量，仅进度条用
 let bytesLoaded = 0;
@@ -101,9 +116,17 @@ Promise.all([
   new GLTFLoader().loadAsync(DATA.concert.crowd.urlA, undefined, onProg),
   new GLTFLoader().loadAsync(DATA.concert.crowd.urlB, undefined, onProg),
   new GLTFLoader().loadAsync(DATA.concert.singer.url, undefined, onProg),
-]).then(([gltf, crowdA, crowdB, singerGltf]) => {
+  // 乐队乐器逐件加载：单件失败不该拖垮主场景，所以用 allSettled 语义（catch → null）
+  ...DATA.concert.band.items.map((it) =>
+    new GLTFLoader().loadAsync(it.url, undefined, onProg).catch((e) => {
+      console.warn(`[band] ${it.id} load failed:`, e);
+      loadingError.textContent += `[band] ${it.id} ${e && e.message ? e.message : e}\n`;
+      return null;
+    })),
+]).then(([gltf, crowdA, crowdB, singerGltf, ...bandGltfs]) => {
   const stadium = convertGLB(gltf.scene);
   scene.add(stadium);
+  stadiumGroup = stadium;
   lightsGroup = stadium.userData.lightsGroup;
   audienceGroup = stadium.userData.audienceGroup;
   skyMesh = stadium.userData.skyMesh;
@@ -141,11 +164,44 @@ Promise.all([
     console.warn('[singer] skipped:', e);
     loadingError.textContent += '[singer] ' + (e && e.message ? e.message : e) + '\n';
   }
+  // 伴奏乐队（舞台两侧体素乐器 + 乐手；任何一件失败都只跳过它自己）
+  try {
+    bandGroup = buildBand(bandGltfs, [crowdA, crowdB]);
+    stadium.add(bandGroup);
+    const q = Q.get('layers');
+    if (q && !q.split(',').map((x) => x.trim()).includes('band')) bandGroup.visible = false;
+    // QA：?nopperf=1 隐藏乐手，只留乐器（用于差分验收乐手是否真的画出来）
+    if (Q.get('nopperf') === '1') {
+      for (const p of bandGroup.userData.performers) p.root.visible = false;
+    }
+    if (debugMode) {
+      const ids = bandGroup.userData.items.map((it) => it.id).join(',');
+      const pids = bandGroup.userData.performers.map((p) => p.id).join(',');
+      loadingError.textContent += `[band] items=${bandGroup.userData.items.length} [${ids}]\n`;
+      loadingError.textContent += `[band] performers=${bandGroup.userData.performers.length} [${pids}]\n`;
+      // QA：每个乐手的世界包围盒（验脚底贴台面 y≈7.32、身高≈1.7m、横向不越界）
+      const bb = new THREE.Box3();
+      for (const p of bandGroup.userData.performers) {
+        bb.setFromObject(p.root);
+        loadingError.textContent += `[band] ${p.id} y=[${bb.min.y.toFixed(2)},${bb.max.y.toFixed(2)}]`
+          + ` h=${(bb.max.y - bb.min.y).toFixed(2)} x=[${bb.min.x.toFixed(1)},${bb.max.x.toFixed(1)}]`
+          + ` z=[${bb.min.z.toFixed(1)},${bb.max.z.toFixed(1)}]\n`;
+      }
+    }
+  } catch (e) {
+    console.warn('[band] skipped:', e);
+    loadingError.textContent += '[band] ' + (e && e.message ? e.message : e) + '\n';
+  }
   // QA：?fx=tide|pixel|normal 与 ?pattern=heart|note|smiley|star|text 直达特效
   const qfx = Q.get('fx');
   if (qfx) lightState.audienceMode = qfx;
   const qpat = Q.get('pattern');
   if (qpat) { lightState.pixelPattern = qpat; lightState.audienceMode = 'pixel'; }
+  // QA：?scroll=0 冻结图案横移动效，让截图与离线校验的 shift=0 对齐
+  if (Q.get('scroll') === '0') lightState.pixelScroll = false;
+  // QA：?pshift=<列> 冻结到指定横移列，用于复现/验收图案水平位置
+  const qShift = parseFloat(Q.get('pshift'));
+  if (isFinite(qShift)) lightState.pixelShift = qShift;
   const qOrbit = Q.get('orbitT');
   if (isFinite(qOrbit) && Q.get('view') === 'sg-orbit') orbitAngle = parseFloat(qOrbit);
   if (Q.get('walk') === '1') { setWalk(true); const wp = Q.get('walkAt'); if (wp) { camera.position.fromArray(wp.split(',').map(Number)); } const wy = Q.get('walkYaw'); if (isFinite(parseFloat(wy))) { walk.yaw = parseFloat(wy); walkLook(); } }
@@ -165,6 +221,15 @@ Promise.all([
     const st = parseFloat(Q.get('showT'));
     if (isFinite(st)) show.fastForward(st);
   }
+  // QA：?lightshow=1（A）或 ?lightshow=b（B）启动灯光秀；?lsT=秒 冻结到确定时刻
+  if (Q.get('lightshow')) {
+    const lv = Q.get('lightshow');
+    lightState.lightShowVariant = lv === 'b' ? 'b' : 'a';
+    lightState.lightShow = true;
+    const lt = parseFloat(Q.get('lsT'));
+    lightState.lightShowT = isFinite(lt) ? lt : 0;
+    lightState.lsFreeze = isFinite(lt);
+  }
   loaded = true;
   loadingEl.classList.add('done');
   if (uiVisible) {
@@ -172,15 +237,213 @@ Promise.all([
     if (!hudBuilt) buildHUD();
   }
   toast('球场已载入');
+  // QA：?pixdump=heart 把真实渲染用的 instanceColor 按点阵网格输出到 #loading-error，
+  // 供 headless 验收（不依赖截图像素采样，免疫于机位/遮挡/背景亮度）
+  if (Q.get('pixdump')) dumpPixelGrid(Q.get('pixdump'));
+  // QA：?fxdump=stripe|meet|chase 把看台/内场的平均亮度剖面打到 #loading-error
+  if (Q.get('fxdump')) dumpWaveFx(Q.get('fxdump'));
+  // QA：?lsdump=2.0 把灯光秀在 t=2.0s 的三载体实测值打到 #loading-error
+  if (Q.get('lsdump') != null) {
+    const raw = Q.get('lsdump');
+    dumpLightShow(raw === 'off' ? NaN : (parseFloat(raw) || 0));
+  }
 }).catch((err) => {
   loadingError.textContent = '模型加载失败：' + (err && err.message ? err.message : err) +
     '\n请确认通过 HTTP 访问（不能用 file:// 直接打开）';
   console.error(err);
 });
 
+// ---------- QA：把真实渲染用的点阵 instanceColor 打印成 ASCII ----------
+// 读取的是渲染器里实际的 instanceColor 数组，因此验证的是「编址 + 配色 + 刷新」
+// 整条生产路径，而不是离线模型的期望值。
+function dumpPixelGrid(pattern) {
+  if (!crowdGroup) return;
+  const G = pitGrid();
+  const u = crowdGroup.userData;
+  const W = G.cols, H = G.rows;
+  lightState.audienceMode = 'pixel';
+  lightState.pixelPattern = pattern;
+  lightState.pixelScroll = false;
+  updateCrowd(crowdGroup, 0, lightState);        // 立即按 shift=0 写一遍颜色
+  const cells = new Map();
+  let noColor = 0, dup = 0;
+  for (const e of u.pixelEntries || []) {
+    const ic = e.mesh && e.mesh.instanceColor;
+    if (!ic) { noColor++; continue; }
+    const r = e.row, c = e.col;
+    if (!(r >= 0 && r < H && c >= 0 && c < W)) continue;
+    const key = `${r},${c}`;
+    if (cells.has(key)) { dup++; continue; }
+    const i3 = e.idx * 3;
+    cells.set(key, (ic.array[i3] + ic.array[i3 + 1] + ic.array[i3 + 2]) / 3);
+  }
+  const cnt = { main: 0, edge: 0, dim: 0, black: 0 };
+  for (const [, v] of cells) {
+    if (v > 2.0) cnt.main++; else if (v > 0.4) cnt.edge++;
+    else if (v > 0.05) cnt.dim++; else cnt.black++;
+  }
+  const lines = [];
+  lines.push(`[pixdump] pattern=${pattern} grid=${W}x${H} sticks=${u.pixelSticks || 0} `
+    + `entries=${(u.pixelEntries || []).length} cells=${cells.size}/${W * H} `
+    + `noColor=${noColor} dup=${dup}`);
+  lines.push(`[pixdump] main=${cnt.main} edge=${cnt.edge} dim=${cnt.dim} black=${cnt.black}`);
+  lines.push('[pixdump]     ' + Array.from({ length: W }, (_, i) => String(i % 10)).join(''));
+  for (let r = 0; r < H; r++) {
+    let line = '';
+    for (let c = 0; c < W; c++) {
+      const v = cells.get(`${r},${c}`);
+      line += v === undefined ? ' ' : (v > 2.0 ? '#' : v > 0.4 ? '+' : v > 0.05 ? '.' : ' ');
+    }
+    lines.push(`[pixdump] ${String(r).padStart(2, ' ')} ${line}`);
+  }
+  loadingError.textContent += lines.join('\n') + '\n';
+}
+
+// ---------- QA：把真实 instanceColor 按位置分桶，验证人浪光效 ----------
+// 看台按环向 u（0..1 整周）分 48 桶、内场按列 col 分 50 桶，各桶求平均亮度，
+// 输出「剖面字符串」——足以判读条纹/相遇/追逐的形状、方向、前沿位置。
+const FX_RAMP = ' .:-=+*#%@';
+function dumpWaveFx(mode) {
+  const W = DATA.concert.waveFx;
+  lightState.audienceMode = mode;
+  lightState.wave = null;
+  // 取一个能看出形状的时刻：meet 取前沿推进到 ~55% 时（尚未合拢）
+  const t = mode === 'meet' ? W.meet.period * 0.35 : 0;
+  if (audienceGroup) updateAudience(audienceGroup, t, lightState);
+  if (crowdGroup) updateCrowd(crowdGroup, t, lightState);
+  const lines = [`[fxdump] mode=${mode} t=${t.toFixed(2)}`];
+
+  const buckets = (entries, keyOf, n) => {
+    const sum = new Float64Array(n), cnt = new Float64Array(n);
+    for (const e of entries || []) {
+      const ic = e.mesh && e.mesh.instanceColor;
+      if (!ic) continue;
+      const k = keyOf(e);
+      if (!(k >= 0 && k < n)) continue;
+      const i3 = e.idx * 3;
+      sum[k] += (ic.array[i3] + ic.array[i3 + 1] + ic.array[i3 + 2]) / 3;
+      cnt[k]++;
+    }
+    return Array.from({ length: n }, (_, i) => (cnt[i] ? sum[i] / cnt[i] : 0));
+  };
+  const toStr = (arr) => {
+    const mx = Math.max(...arr, 1e-4);
+    return arr.map((v) => FX_RAMP[Math.min(FX_RAMP.length - 1, Math.round((v / mx) * (FX_RAMP.length - 1)))]).join('');
+  };
+  // 看台：环向 48 桶
+  if (audienceGroup && audienceGroup.userData.pixelEntries) {
+    const a = buckets(audienceGroup.userData.pixelEntries, (e) => Math.floor(e.u * 48), 48);
+    const zeros = a.filter((v) => v <= 1e-6).length;
+    lines.push(`[fxdump] stands n=48 min=${Math.min(...a).toFixed(3)} max=${Math.max(...a).toFixed(3)} zeros=${zeros}/48`);
+    lines.push('[fxdump] stands |' + toStr(a) + '|');
+  }
+  // 内场：按列 50 桶（每列把 31 排平均掉）
+  if (crowdGroup && crowdGroup.userData.pixelEntries) {
+    const c = buckets(crowdGroup.userData.pixelEntries, (e) => e.col, 50);
+    const zeros = c.filter((v) => v <= 1e-6).length;
+    lines.push(`[fxdump] pit n=50 min=${Math.min(...c).toFixed(3)} max=${Math.max(...c).toFixed(3)} zeros=${zeros}/50`);
+    lines.push('[fxdump] pit    |' + toStr(c) + '|');
+  }
+  loadingError.textContent += lines.join('\n') + '\n';
+}
+
+// ---------- QA：灯光秀的三载体实测数值（A / B 通用） ----------
+// 直接读场景里「正在渲染」的真实值：应援棒 instanceColor（看台 8870 支分 48 桶）、
+// 环带材质 emissiveIntensity、LED 大屏 emissiveIntensity + 屏体缩放、光束各束 uAlpha、
+// 以及编舞本身返回的曲线值。用途：headless dump-dom 一次拿到全部载体的量，不依赖截图采样。
+function dumpLightShow(t) {
+  const isB = lightState.lightShowVariant === 'b';
+  const P = isB ? DATA.concert.lightShowB : DATA.concert.lightShow;
+  const phaseAt = isB ? lightShowBPhaseAt : lightShowPhaseAt;
+  // ?lsdump=off → 走「未开启」路径，验证着色器 uniform 与光束颜色能否干净归位
+  const off = !isFinite(t);
+  const R = off ? null : lightShowOf({ lightShow: true, lightShowT: t, lightShowVariant: lightState.lightShowVariant }, t);
+  const tt = off ? 0 : t; // off 模式下给一个合法时间，避免把 NaN 传给下游
+  lightState.lightShow = !off;
+  lightState.lightShowT = tt;
+  lightState.lsFreeze = !off;
+  // 先跑一遍氛围，让 ribbonMesh.userData.lsBaseIntensity 有值（tick 里本来是这个顺序）
+  updateAtmosphere(timeOfDay, sceneState.lightsOff);
+  if (lightsGroup) updateLights(lightsGroup, tt, lightState);
+  if (ribbonMesh) updateLightShowRibbon(ribbonMesh, R, tt);
+  const ribState = ribbonMesh ? ensureRibbonShader(ribbonMesh) : null;
+  if (stadiumGroup?.userData?.stageGroup) updateLightShowBody(stadiumGroup.userData.stageGroup, R, tt);
+  if (audienceGroup) updateAudience(audienceGroup, tt, lightState);
+  const tag = isB ? 'lsdumpB' : 'lsdump';
+  const lines = [off
+    ? `[${tag}] mode=off（未开启灯光秀，验证归位）`
+    : `[${tag}] t=${t.toFixed(2)}/${R.total.toFixed(2)} phase=${R.name} p=${R.p.toFixed(3)} w=${R.w.toFixed(3)}`];
+  if (!off) {
+    lines.push(`[${tag}] curve sticks.gain=${R.sticks.gain.toFixed(3)} sticks.white=${R.sticks.white.toFixed(3)} `
+      + `bandU=${R.sticks.bandU.toFixed(3)} bandW=${R.sticks.bandW.toFixed(3)} bandFloor=${R.sticks.bandFloor.toFixed(3)} `
+      + `ribbon=${R.ribbon.intensity.toFixed(3)} ribbonWhite=${R.ribbon.white.toFixed(3)} beam=${R.beam.gain.toFixed(3)} beamWhite=${R.beam.white.toFixed(3)}`
+      + (isB ? ` beamBlue=${(R.beam.blue || 0).toFixed(3)}` : ''));
+    if (isB && R.body) {
+      lines.push(`[${tag}] curve body.gain=${R.body.gain.toFixed(3)} tint=${R.body.tint.toFixed(3)} stripe=${R.body.stripe.toFixed(3)} `
+        + `scale=${R.body.scale.toFixed(3)} freq=${R.body.freq.toFixed(2)} phase=${R.body.phase.toFixed(3)}`);
+    }
+  }
+  // 环带：材质实际 emissiveIntensity
+  if (ribbonMesh) {
+    const lu = ribState && ribState.uniforms;
+    lines.push(`[${tag}] ribbon emissiveIntensity=${ribbonMesh.material.emissiveIntensity.toFixed(4)} `
+      + `base=${(ribbonMesh.userData.lsBaseIntensity ?? NaN).toFixed(4)} `
+      + `uLsMix=${lu ? lu.uLsMix.value.toFixed(3) : 'NA'} uLsWhite=${lu ? lu.uLsWhite.value.toFixed(3) : 'NA'}`);
+  } else lines.push(`[${tag}] ribbon MISSING`);
+  // LED 大屏（B 的光团本体）：材质亮度 + 着色器 uniform + 屏体缩放
+  const ledMat = stadiumGroup?.userData?.stageGroup?.userData?.ledMainMat;
+  if (ledMat) {
+    const su = ledMat.userData.sbUniforms || null;
+    const wallGrp = stadiumGroup.userData.stageGroup.getObjectByName('led-wall');
+    // 屏体缩放只作用于非背板的子级（screen-wall 被刻意跳过，所以不能取 children[0]）
+    const scaled = wallGrp ? wallGrp.children.find((m) => m.name !== 'screen-wall') : null;
+    const sc = scaled ? scaled.scale.x : NaN;
+    const sbU = ledMat.userData.sbUniforms;
+    lines.push(`[${tag}] screen emissiveIntensity=${ledMat.emissiveIntensity.toFixed(4)} `
+      + `base=${(ledMat.userData.sbBaseIntensity ?? NaN).toFixed(4)} scale=${sc.toFixed(3)} `
+      + `uSbMix=${sbU ? sbU.uSbMix.value.toFixed(3) : 'NA'} uSbTint=${sbU ? sbU.uSbTint.value.toFixed(3) : 'NA'} `
+      + `uSbStripe=${sbU ? sbU.uSbStripe.value.toFixed(3) : 'NA'} uSbFreq=${sbU ? sbU.uSbFreq.value.toFixed(2) : 'NA'} `
+      + `patched=${ledMat.userData.sbPatched ? (ledMat.userData.sbPatched.frag && ledMat.userData.sbPatched.vert ? 'ok' : 'partial') : 'none'}`);
+  } else lines.push(`[${tag}] screen MISSING`);
+  // 光束：各束 uAlpha（core 层）× 全 20 层求和
+  if (lightsGroup && lightsGroup.userData.beamUnits) {
+    const units = lightsGroup.userData.beamUnits;
+    const alphas = units.map((u) => u.alphas.reduce((s, a) => s + a.u.value, 0));
+    const heads = units.map((u) => u.headMat.emissiveIntensity);
+    lines.push(`[${tag}] beams n=${units.length} alphaSum min=${Math.min(...alphas).toFixed(3)} max=${Math.max(...alphas).toFixed(3)}`);
+    lines.push(`[${tag}] beams |` + toStrRamp(alphas) + '|');
+    lines.push(`[${tag}] heads min=${Math.min(...heads).toFixed(2)} max=${Math.max(...heads).toFixed(2)}`);
+    // 颜色是否已转白/转蓝：取第一束的两层 uColor
+    const c0 = units[0].colors[0]?.value;
+    if (c0) lines.push(`[${tag}] beamColor0 r=${c0.r.toFixed(3)} g=${c0.g.toFixed(3)} b=${c0.b.toFixed(3)}`);
+  } else lines.push(`[${tag}] beams MISSING`);
+  // 看台应援棒：48 桶平均亮度（真实 instanceColor）
+  if (audienceGroup && audienceGroup.userData.pixelEntries) {
+    const n = 48, sum = new Float64Array(n), cnt = new Float64Array(n);
+    let noColor = 0;
+    for (const e of audienceGroup.userData.pixelEntries) {
+      const ic = e.mesh && e.mesh.instanceColor;
+      if (!ic) { noColor++; continue; }
+      const k = Math.min(n - 1, Math.max(0, Math.floor(e.u * n)));
+      const i3 = e.idx * 3;
+      sum[k] += (ic.array[i3] + ic.array[i3 + 1] + ic.array[i3 + 2]) / 3;
+      cnt[k]++;
+    }
+    const arr = Array.from({ length: n }, (_, i) => (cnt[i] ? sum[i] / cnt[i] : 0));
+    lines.push(`[${tag}] sticks n=${n} noColor=${noColor} min=${Math.min(...arr).toFixed(3)} max=${Math.max(...arr).toFixed(3)} `
+      + `zeros=${arr.filter((v) => v <= 1e-6).length}/${n} mean=${(arr.reduce((a, b) => a + b, 0) / n).toFixed(3)}`);
+    lines.push(`[${tag}] sticks |` + toStrRamp(arr) + '|');
+  } else lines.push(`[${tag}] sticks MISSING`);
+  loadingError.textContent += lines.join('\n') + '\n';
+}
+function toStrRamp(arr) {
+  const mx = Math.max(...arr, 1e-4);
+  return arr.map((v) => FX_RAMP[Math.min(FX_RAMP.length - 1, Math.round((v / mx) * (FX_RAMP.length - 1)))]).join('');
+}
+
 // ---------- 初始机位 ----------
 // QA 逐层显影：?layers=ground,stage,audience（缺省全部显示）
-const LAYER_NAMES = ['bowl', 'ground', 'concert-field', 'stage', 'sound', 'stage-lights', 'audience', 'crowd', 'singer', 'led-ribbon', 'sky'];
+const LAYER_NAMES = ['bowl', 'ground', 'concert-field', 'stage', 'sound', 'stage-lights', 'audience', 'crowd', 'singer', 'band', 'led-ribbon', 'sky'];
 function applyLayersParam(stadium) {
   const q = Q.get('layers');
   if (!q) return;
@@ -189,6 +452,7 @@ function applyLayersParam(stadium) {
   for (const c of stadium.children) if (c.name) byName[c.name] = c; // 仅直接子级，避免 GLB 同名节点遮蔽
   byName.crowd = crowdGroup;
   byName.singer = singerGroup;
+  byName.band = bandGroup;
   for (const name of LAYER_NAMES) {
     const obj = byName[name];
     if (obj) obj.visible = show.has(name);
@@ -243,8 +507,10 @@ function updateAtmosphere(t, lightsOff) {
   renderer.toneMappingExposure = A.exposureNight + (A.exposureDay - A.exposureNight) * d;
   bloom.strength = A.bloomDay + (A.bloomNight - A.bloomDay) * night;
   if (ribbonMesh) {
-    ribbonMesh.material.emissiveIntensity =
-      (A.ribbonIntensityDay + (A.ribbonIntensityNight - A.ribbonIntensityDay) * night) * (lightsOff ? 0.15 : 1);
+    const base = (A.ribbonIntensityDay + (A.ribbonIntensityNight - A.ribbonIntensityDay) * night) * (lightsOff ? 0.15 : 1);
+    // 记下氛围基准值：灯光秀 A 的环带层以它为锚点插值（否则每帧被这里覆盖）
+    ribbonMesh.userData.lsBaseIntensity = base;
+    ribbonMesh.material.emissiveIntensity = base;
   }
 }
 
@@ -308,6 +574,8 @@ function mkToggle(parent, label, val, cb) {
   seg.appendChild(on); seg.appendChild(off);
   row.appendChild(seg);
   parent.appendChild(row);
+  // 外部可用 apply(v) 只更新按钮态而不触发回调（用于其它入口改动状态后同步显示）
+  return { apply: (v) => { on.classList.toggle('on', v); off.classList.toggle('on', !v); } };
 }
 
 let hudBuilt = false;
@@ -315,6 +583,28 @@ let currentViewName = '鸟瞰全景';
 let currentViewId = 'aerial';
 let orbitAngle = 0;
 let statFrames = 0;
+// 人浪分栏的光效按钮（常规放在人浪里，与潮汐/条纹/相遇/追逐并列）
+const WAVE_FX_BTNS = [['normal', '常规'], ['tide', '潮汐'], ['stripe', '条纹'], ['meet', '相遇'], ['chase', '追逐']];
+// 特效按钮注册表：fxEls[audienceMode] = [button, ...]，任何入口（HUD 按钮 / URL 参数 / 开场秀）
+// 改 lightState.audienceMode 后调 syncFx 即可让所有分栏的按钮状态保持一致。
+const fxEls = {};
+const fxHooks = [];   // 非按钮类的联动（如「点阵屏」开关的 on 态）
+let _lastSyncedFx = lightState.audienceMode;   // 上次同步时的模式（开场秀改状态后用于补一次 syncFx）
+function syncFx() {
+  const cur = lightState.audienceMode;
+  for (const k of Object.keys(fxEls)) {
+    for (const b of fxEls[k]) b.classList.toggle('on', k === cur);
+  }
+  for (const h of fxHooks) h(cur);
+}
+function setFx(id) {
+  lightState.audienceMode = id;
+  _lastSyncedFx = id;
+  syncFx();
+}
+function regFx(id, btn) {
+  (fxEls[id] || (fxEls[id] = [])).push(btn);
+}
 const VIEW_ICONS = {
   aerial: '🛩️', stagefront: '👀', stands: '🪑', facade: '🏟️', roof: '🔭', free: '🧭',
   'aud-pit': '🙋', 'aud-north': '🪑', 'aud-east': '🏛️', 'aud-west': '🏛️', 'aud-south': '🔙',
@@ -411,36 +701,23 @@ function buildHUD() {
   mkToggle(gl, '灯组开关', lightState.lampBanks, (v) => { lightState.lampBanks = v; toast(v ? '灯组已开' : '灯组已关'); });
   mkToggle(gl, '场馆泛光', !sceneState.lightsOff, (v) => { sceneState.lightsOff = !v; toast(v ? '场馆泛光已开' : '场馆泛光已关'); });
 
-  // 观众（星海开关 + 特效模式 + 点阵图案）
+  // 观众（星海开关 + 点阵屏开关 + 点阵图案）
   const ga = grp('crowd', '👥', '观众');
   mkToggle(ga, '观众星海', true, (v) => {
     if (audienceGroup) audienceGroup.visible = v;
     if (crowdGroup) crowdGroup.visible = v;
     toast(v ? '观众星海已开' : '观众星海已关');
   });
-  const fxRow = document.createElement('div');
-  fxRow.className = 'hud-row';
-  fxRow.innerHTML = '<label>特效</label>';
-  const fxEls = {};
-  const fxEff = document.createElement('div');
-  fxEff.className = 'seg';
-  const setFx = (id) => {
-    lightState.audienceMode = id;
-    for (const k of Object.keys(fxEls)) fxEls[k].classList.toggle('on', k === id);
-  };
-  for (const [id, name] of [['normal', '常规'], ['tide', '潮汐'], ['pixel', '点阵']]) {
-    const b = document.createElement('button');
-    b.textContent = name;
-    if (id === 'normal') b.classList.add('on');
-    b.onclick = () => { setFx(id); toast(`观众特效：${name}`); };
-    fxEls[id] = b;
-    fxEff.appendChild(b);
-  }
-  fxRow.appendChild(fxEff);
-  ga.appendChild(fxRow);
+  // 「点阵屏」是内场专属开关，与「人浪」分栏并列而不是挤在同一个三选一里：
+  // 开 → audienceMode='pixel'（内场插棒显示图案，看台不参与），关 → 回到常规呼吸。
+  const pixToggle = mkToggle(ga, '点阵屏', lightState.audienceMode === 'pixel', (v) => {
+    setFx(v ? 'pixel' : 'normal');
+    toast(v ? '内场点阵屏已开' : '内场点阵屏已关');
+  });
   const patRow = document.createElement('div');
   patRow.className = 'hud-row';
-  patRow.innerHTML = '<label>图案</label>';
+  // 点阵屏只由内场插棒承担（看台应援棒不参与图案），故标签写明「内场」
+  patRow.innerHTML = '<label>内场图案</label>';
   const patSeg = document.createElement('div');
   patSeg.className = 'seg';
   for (const [id, name] of [['heart', '❤'], ['note', '♪'], ['smiley', '☺'], ['star', '★'], ['text', 'BB']]) {
@@ -457,6 +734,27 @@ function buildHUD() {
   patRow.appendChild(patSeg);
   ga.appendChild(patRow);
 
+  // 人浪（常规 / 潮汐 / 条纹 / 相遇 / 追逐）—— 观众光效的第二组
+  const gWv = grp('wave', '🌊', '人浪');
+  const wRow = document.createElement('div');
+  wRow.className = 'hud-row';
+  wRow.innerHTML = '<label>光效</label>';
+  const wSeg = document.createElement('div');
+  wSeg.className = 'seg';
+  for (const [id, name] of WAVE_FX_BTNS) {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.dataset.fx = id;
+    if (id === lightState.audienceMode) b.classList.add('on');
+    b.onclick = () => { setFx(id); toast(`人浪光效：${name}`); };
+    regFx(id, b);
+    wSeg.appendChild(b);
+  }
+  wRow.appendChild(wSeg);
+  gWv.appendChild(wRow);
+  // 「点阵屏」开关跟随 audienceMode（HUD 按钮 / URL 参数 / 开场秀都可能改它）
+  fxHooks.push((mode) => pixToggle.apply(mode === 'pixel'));
+  syncFx();
   // 观众机位
   const gac = grp('aud-cam', '🪑', '观众机位');
   for (const v of DATA.camAudience) {
@@ -502,6 +800,57 @@ function buildHUD() {
   bSkip.textContent = '■ 跳过';
   bSkip.onclick = () => { if (show && show.active) show.skip(); else toast('没有进行中的开场秀'); };
   gs.appendChild(bSkip);
+
+  // 灯光秀（两个视频的复刻，各自循环播放）
+  const gls = grp('lightshow', '✨', '灯光秀');
+  // 变体切换：A = 全环应援棒 + 屋顶环带 + 舞台光束；B = 舞台中央单光团
+  const LS_VARIANTS = [['a', '灯光秀 A'], ['b', '灯光秀 B']];
+  const lsVarRow = document.createElement('div');
+  lsVarRow.className = 'hud-row';
+  lsVarRow.innerHTML = '<label>版本</label>';
+  const lsVarSeg = document.createElement('div');
+  lsVarSeg.className = 'seg';
+  const lsVarBtns = {};
+  for (const [id, name] of LS_VARIANTS) {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.onclick = () => {
+      lightState.lightShowVariant = id;
+      lightState.lightShowT = 0;      // 换变体后从头播，避免两个时间轴长度不同导致跳段
+      lightState.lsFreeze = false;
+      for (const k of Object.keys(lsVarBtns)) lsVarBtns[k].classList.toggle('on', k === id);
+      lsDurText.textContent = `${lsDurOf(id).toFixed(1)}s`;
+      toast(id === 'b' ? '切换到灯光秀 B（舞台中央光团）' : '切换到灯光秀 A（全环应援棒）');
+    };
+    lsVarBtns[id] = b;
+    lsVarSeg.appendChild(b);
+  }
+  lsVarBtns[lightState.lightShowVariant]?.classList.add('on');
+  lsVarRow.appendChild(lsVarSeg);
+  gls.appendChild(lsVarRow);
+  const lsDurOf = (id) => (id === 'b' ? lightShowBDuration(DATA.concert.lightShowB) : lightShowDuration(DATA.concert.lightShow));
+  const lsToggle = mkToggle(gls, '播放灯光秀', lightState.lightShow, (v) => {
+    lightState.lightShow = v;
+    lightState.lsFreeze = false;
+    if (v) lightState.lightShowT = 0;
+    toast(v ? '灯光秀已开始' : '灯光秀已停止');
+  });
+  const lsInfo = document.createElement('div');
+  lsInfo.className = 'hud-row';
+  const lsDesc = document.createElement('label');
+  lsDesc.style.cssText = 'color:var(--text-dim);font-size:10.5px;line-height:1.5';
+  lsDesc.textContent = 'A：应援棒 + 屋顶环带 + 舞台光束 · B：舞台中央光团 · 循环播放';
+  lsInfo.appendChild(lsDesc);
+  gls.appendChild(lsInfo);
+  const lsStage = document.createElement('div');
+  lsStage.className = 'hud-row';
+  lsStage.innerHTML = '<label>阶段</label><span style="color:var(--text-dim);font-size:11px">待机</span>'
+    + '<span style="color:var(--text-dim);font-size:10.5px;margin-left:6px" data-dur></span>';
+  gls.appendChild(lsStage);
+  const lsStageVal = lsStage.querySelector('span');
+  const lsDurText = lsStage.querySelector('[data-dur]');
+  lsStageEl = lsStageVal;
+  lsDurText.textContent = `${lsDurOf(lightState.lightShowVariant).toFixed(1)}s`;
 
   // 漫游
   const gw = grp('walk', '🎮', '漫游');
@@ -616,8 +965,31 @@ let elapsed = 0;
 const stillMode = Q.get('still') === '1';
 let loaded = false;
 let frameCount = 0;
+
+// ---------- QA 性能探针（?perf=1）----------
+// 每段耗时累加，满 30 帧把均值写进 #loading-error，headless dump-dom 一次取出。
+// 只用于定位卡顿，正常运行零开销（perfMode=false 时 _p() 立即返回）。
+const perfMode = Q.get('perf') === '1';
+const _perfAcc = { n: 0, t: {}, last: 0 };
+let _tSeg = 0;
+const _p = (name) => {
+  if (!perfMode) return;
+  const n = performance.now();
+  _perfAcc.t[name] = (_perfAcc.t[name] || 0) + (n - _tSeg);
+  _tSeg = n;
+};
+function _pFlush() {
+  if (!perfMode) return;
+  const a = _perfAcc;
+  a.n++;
+  if (a.n < 30) return;
+  const keys = ['atmos', 'show', 'hud', 'lights', 'ribbon', 'audience', 'crowd', 'band', 'singer', 'camera', 'render', 'tick'];
+  const parts = keys.filter((k) => a.t[k] != null).map((k) => `${k}=${(a.t[k] / a.n).toFixed(2)}`);
+  loadingError.textContent += `[perf] frames=${a.n} ${parts.join(' ')}\n`;
+  a.n = 0; a.t = {}; a.last = performance.now();
+}
 const _lastGoodCam = { pos: new THREE.Vector3(-262, 175, 320), tgt: new THREE.Vector3(-32, 14, 49) };
-function tick() {
+function tickBody() {
   const dt = clock.getDelta();
   elapsed += dt;
   // NaN 护盾：相机/目标一旦非有限值，立即回滚上一有效机位（任何来源的 NaN 都不致黑屏）
@@ -637,13 +1009,48 @@ function tick() {
     _lastGoodCam.pos.copy(camera.position);
     _lastGoodCam.tgt.copy(controls.target);
   }
+  if (perfMode) _tSeg = performance.now();
   updateAtmosphere(timeOfDay, sceneState.lightsOff);
+  _p('atmos');
   if (show) show.update(dt);
   if (show?.r?.fireworks) show.r.fireworks.update(dt);
+  _p('show');
+  // 灯光秀自身时钟：只在启用时推进（改 timeScale 只影响它，不动常态呼吸）
+  const lsDef = lightState.lightShowVariant === 'b' ? DATA.concert.lightShowB : DATA.concert.lightShow;
+  if (lightState.lightShow && !lightState.lsFreeze) lightState.lightShowT += dt * (lsDef?.timeScale ?? 1);
+  // HUD 阶段指示
+  if (lsStageEl && lightState.lightShow) {
+    const isB = lightState.lightShowVariant === 'b';
+    const ph = isB ? lightShowBPhaseAt(lightState.lightShowT, DATA.concert.lightShowB)
+      : lightShowPhaseAt(lightState.lightShowT, DATA.concert.lightShow);
+    const txt = `${LS_PHASE_LABEL[ph.name] || ph.name} ${ph.t.toFixed(1)}/${ph.total.toFixed(1)}s`;
+    if (txt !== lsLastPhase) { lsLastPhase = txt; lsStageEl.textContent = txt; }
+  } else if (lsStageEl && lsLastPhase !== '待机') {
+    lsLastPhase = '待机';
+    lsStageEl.textContent = '待机';
+  }
+  // 开场秀会直接改 lightState.audienceMode；HUD 建好后若发现不同步就刷新按钮态
+  if (hudBuilt && lightState.audienceMode !== _lastSyncedFx) {
+    _lastSyncedFx = lightState.audienceMode;
+    syncFx();
+  }
   if (lightsGroup) updateLights(lightsGroup, elapsed, lightState);
+  _p('lights');
+  // 环带层必须在 updateAtmosphere 之后覆写（那里刚写过常态值）。
+  // 注意要无条件调用：关闭灯光秀时也要把 uLsMix 归 0，否则分段/去色着色会一直残留。
+  const lsCur = lightShowOf(lightState, lightState.lightShowT);
+  if (ribbonMesh) updateLightShowRibbon(ribbonMesh, lsCur, elapsed);
+  _p('ribbon');
+  // B 的中央光团本体：驱动舞台 LED 大屏（A 变体下 body 为 undefined → 自动归零）
+  if (stadiumGroup?.userData?.stageGroup) updateLightShowBody(stadiumGroup.userData.stageGroup, lsCur, elapsed);
   if (audienceGroup) updateAudience(audienceGroup, elapsed, lightState);
+  _p('audience');
   if (crowdGroup && crowdGroup.visible) updateCrowd(crowdGroup, elapsed, lightState);
+  _p('crowd');
+  if (bandGroup) updateBand(bandGroup, elapsed, lightState);
+  _p('band');
   if (singerGroup && singerGroup.visible) updateSinger(singerGroup, dt);
+  _p('singer');
   // 歌手环绕运镜：围绕主唱缓慢环绕（拖拽即退出）
   if (singerGroup && currentViewId === 'sg-orbit' && !tween && !walk.enabled) {
     orbitAngle += dt * 0.14;
@@ -671,12 +1078,37 @@ function tick() {
   stepTween(performance.now());
   stepWalk(dt);
   controls.update();
+  _p('camera');
   if (debugMode) updateDebugOverlay();
   statFrames++;
   composer.render();
+  _p('render');
+  // QA：渲染侧实况（shader 重复编译 / draw call / 三角形数）——判断卡顿是否在 GPU 侧
+  if (perfMode && frameCount === 40) {
+    const i = renderer.info;
+    loadingError.textContent += `[ginfo] calls=${i.render.calls} tris=${i.render.triangles} `
+      + `programs=${i.programs ? i.programs.length : -1} geometries=${i.memory.geometries} textures=${i.memory.textures} `
+      + `pixelRatio=${renderer.getPixelRatio()} size=${renderer.domElement.width}x${renderer.domElement.height} `
+      + `bloom=${bloom.strength.toFixed(2)} drawRange=${i.render.points}/${i.render.lines}\n`;
+  }
+  _pFlush();
   if (loaded) frameCount++;
   if (stillMode && loaded && frameCount >= 6) return;
   requestAnimationFrame(tick);
+}
+// 帧循环自愈：tickBody 内部任何异常都只跳过该帧，绝不打断 requestAnimationFrame 链条。
+// 否则一次 ReferenceError 就会永久停帧（页面「卡住」但无报错弹窗，正是之前的症状）。
+function tick() {
+  try {
+    tickBody();
+  } catch (e) {
+    window._tickErrCount = (window._tickErrCount || 0) + 1;
+    if (window._tickErrCount <= 3) {
+      loadingError.textContent += `[tick] ${e && e.message ? e.message : e}\n`;
+      console.error('[tick]', e);
+    }
+    requestAnimationFrame(tick);
+  }
 }
 tick();
 
@@ -688,4 +1120,15 @@ window.addEventListener('resize', () => {
 });
 
 // QA 辅助：外部可 window.__app 拿到关键对象
-window.__app = { THREE, scene, camera, controls, renderer, composer, bloom, DATA, lightState, sceneState, get time() { return timeOfDay; }, set time(v) { timeOfDay = v; } };
+window.__app = {
+  THREE, scene, camera, controls, renderer, composer, bloom, DATA, lightState, sceneState,
+  get time() { return timeOfDay; }, set time(v) { timeOfDay = v; },
+  // 分组引用：headless 验收需要读取看台实例颜色（instanceColor）
+  get stage() { return stadiumGroup; },
+  get audience() { return audienceGroup; },
+  get crowd() { return crowdGroup; },
+  get singer() { return singerGroup; },
+  get band() { return bandGroup; },
+  // 人浪光效：外部可 setFx('stripe') 切模式、dumpWaveFx() 出剖面
+  setFx, syncFx, dumpWaveFx,
+};

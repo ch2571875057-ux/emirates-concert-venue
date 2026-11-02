@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Band Lab · 体素乐队沙盒</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23142033'/%3E%3Crect x='3' y='6' width='3' height='7' fill='%233f7cb8'/%3E%3Crect x='7' y='4' width='3' height='9' fill='%238fb6dd'/%3E%3Crect x='11' y='8' width='2' height='5' fill='%233f7cb8'/%3E%3C/svg%3E">
+<style>
+  html, body { margin: 0; height: 100%; background: #05070f; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  #hud {
+    position: fixed; left: 12px; top: 10px; color: #8fb6dd;
+    font: 12px/1.65 Consolas, "Microsoft YaHei", monospace; white-space: pre;
+    text-shadow: 0 1px 3px #000; pointer-events: none;
+  }
+  #hud b { color: #eaf3ff; font-weight: 600; }
+  #panel {
+    position: fixed; right: 12px; top: 10px; width: 196px;
+    background: rgba(8, 13, 24, .82); border: 1px solid #1e2c44;
+    border-radius: 8px; padding: 9px 10px 10px;
+    color: #a9c6e6; font: 11px/1.5 Consolas, "Microsoft YaHei", monospace;
+    backdrop-filter: blur(6px);
+  }
+  #panel h4 {
+    margin: 0 0 6px; font-size: 11px; font-weight: 600;
+    color: #6f9bc6; letter-spacing: .08em; text-transform: uppercase;
+  }
+  #panel .row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 7px; }
+  #panel button {
+    flex: 1 1 auto; min-width: 54px; cursor: pointer;
+    background: #121e30; color: #a9c6e6; border: 1px solid #24374f;
+    border-radius: 5px; padding: 3px 6px; font: inherit;
+  }
+  #panel button:hover { background: #1a2b42; border-color: #35527a; }
+  #panel button.on { background: #24507e; color: #eaf3ff; border-color: #3f7cb8; }
+  #panel label {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    padding: 1px 0;
+  }
+  #panel input[type=checkbox] { accent-color: #3f7cb8; margin: 0; }
+  #panel hr { border: 0; border-top: 1px solid #1b2739; margin: 7px 0; }
+  #legend { color: #5f7d9e; font-size: 10px; line-height: 1.45; }
+  #filewarn {
+    display: none; position: fixed; inset: 0; z-index: 99;
+    background: #0b1220; color: #dbe8f7; padding: 48px 56px;
+    font: 15px/1.9 "Microsoft YaHei", system-ui, sans-serif;
+  }
+  #filewarn h2 { margin: 0 0 14px; font-size: 22px; color: #ffcf7a; }
+  #filewarn code {
+    background: #16233a; color: #9ec1ff; padding: 2px 7px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 14px;
+  }
+  #filewarn ol { padding-left: 22px; }
+  #filewarn li { margin: 6px 0; }
+  #filewarn .dim { color: #7e8fa6; font-size: 13.5px; }
+  html.filemode #filewarn { display: block; }
+  html.filemode #app, html.filemode #hud, html.filemode #panel { display: none; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "../../vendor/three.module.js",
+    "three/addons/": "../../vendor/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="filewarn">
+  <h2>需要通过本地服务器打开</h2>
+  <p>你是直接双击打开的 <code>index.html</code>，浏览器不允许 <code>file://</code>
+     页面加载 ES 模块和 <code>.glb</code> 模型，所以这里只会白屏。</p>
+  <ol>
+    <li>回到 <code>sandbox\band-lab\</code>，双击 <code>打开乐队沙盒.bat</code>（推荐，自动起服务器并开页面）。</li>
+    <li>或者手动：在本目录上级 <code>concert1\</code> 里执行
+        <code>python -m http.server 8152 --bind 127.0.0.1</code>，
+        然后浏览器访问 <code>http://127.0.0.1:8152/sandbox/band-lab/index.html</code>。</li>
+    <li>只想看静态图：双击 <code>打开预览图册.bat</code>，那个不需要服务器。</li>
+  </ol>
+  <p class="dim">如果已用 http 打开仍然白屏，请按 F12 打开控制台，把红色报错发我。</p>
+</div>
+<div id="app"></div>
+<div id="hud"></div>
+<div id="panel"></div>
+<script>
+  if (location.protocol === 'file:') document.documentElement.className = 'filemode';
+</script>
+<script type="module" src="./band-lab.js"></script>
+</body>
+</html>
