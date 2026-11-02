@@ -48,12 +48,19 @@ python -m http.server 8141 --bind 127.0.0.1
 headless 截图流水线（Edge 示例）：
 
 ```bash
-msedge --headless=new --disable-gpu --enable-unsafe-swiftshader \
-  --use-angle=swiftshader --window-size=1600,900 --virtual-time-budget=10000 \
+msedge --headless=new --enable-unsafe-swiftshader \
+  --use-angle=swiftshader --window-size=1600,900 --virtual-time-budget=20000 \
   --screenshot=out.png "http://127.0.0.1:8141/?ui=0&still=1&view=aerial&time=21"
 ```
 
-`preview/` 内含全部验收截图与 8 帧建造序列（`preview/sequence/`）；`render/` 为 1920×1080 最终交付图。
+> **踩坑**：新版 Edge（2026 年版本）加上 `--disable-gpu` 会让 WebGL 帧抓不到，
+> 截图稳定输出全黑（约 6 KB 的纯黑 PNG），而页面本身正常（`#loading` 已是
+> `class="done"`、canvas 尺寸正常）。去掉 `--disable-gpu` 即可出图。
+> SwiftShader 下帧率很低，多给 `--virtual-time-budget`（20 s 以上），
+> 否则应援棒星海还没点亮就截了。
+
+`preview/` 内含全部验收截图与 8 帧建造序列（`preview/sequence/`），按主题
+分目录（见下方「子目录约定」）；`render/` 为 1920×1080 最终交付图。
 
 - **开场秀**：HUD「开场秀」分组 ▶ 播放 / ■ 跳过；约 46s 时间轴——
   P0 暗场 LED 倒计时 → P1 应援棒星海两轮波浪点亮（波源=舞台，亮度波沿看台径向传播）
