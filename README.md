@@ -4,13 +4,25 @@
 
 ## 运行
 
-必须通过 HTTP 打开（ES Module 的 CORS 限制，`file://` 打不开）：
+必须通过 HTTP 打开（ES Module 的 CORS 限制，`file://` 直接双击 index.html 打不开）。
+
+**最省事：双击 `启动服务器.bat`** —— 它会自动定位到脚本所在目录、自动找到一个
+真正可用的 Python（跳过 Microsoft Store 的占位程序）、起服务并打开浏览器。
+
+手动启动：
 
 ```bash
-cd concert1
-python -m http.server 8141 --bind 127.0.0.1
+cd /e/concert1          # 或项目实际所在目录
+python server_nocache.py # 禁缓存版，改完刷新即生效
 # 浏览器访问 http://127.0.0.1:8141/
 ```
+
+> **注意（2026-11 排查记录）**：本机 PATH 里的 `python` 是
+> `C:\Users\...\AppData\Local\Microsoft\WindowsApps\python.exe`，这是 Microsoft Store
+> 的**占位空壳**，执行任何命令都没有输出也不报错，`python -m http.server` 会静默失败，
+> 表现为「双击后浏览器打不开」。`启动服务器.bat` 通过真的执行一次 `print(1)` 来验证
+> 候选解释器，能正确跳过它。若要一劳永逸，建议装一个真正的 Python 3 并勾选
+> Add to PATH。
 
 依赖已全部本地化在 `vendor/`（three@0.169.0 及 addons，来自 unpkg），**断网可跑**。
 
