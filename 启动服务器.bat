@@ -9,32 +9,62 @@ set "PY="
 rem =====================================================================
 rem  1. 找一个"真能跑"的 Python
 rem     注意：Windows 自带的 WindowsApps\python.exe 是 Microsoft Store 的
-rem     占位空壳，敲命令没有任何输出也不报错，必须跳过它。
-rem     验证方式：真的执行一次 print(1)，看有没有输出 1。
+rem     占位空壳，执行后既不输出也不报错（退出码 9009），必须跳过。
+rem     验证方式：真的执行一次 print(1)，看输出里有没有 1。
+rem     探测顺序：用户自己装的优先，WorkBuddy 自带的放最后兜底。
 rem =====================================================================
-for /d %%D in ("%USERPROFILE%\.workbuddy\binaries\python\versions\*") do (
+
+rem 1.1 新版安装器布局 LOCALAPPDATA\Python\pythoncore-*
+for /d %%D in ("%LOCALAPPDATA%\Python\pythoncore-*") do (
   if not defined PY if exist "%%~D\python.exe" (
     "%%~D\python.exe" -c "print(1)" 2>nul | findstr "^1$" >nul && set "PY=%%~D\python.exe"
   )
 )
-for %%C in (
-  "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
-  "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-  "%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-  "C:\Python313\python.exe"
-  "C:\Python312\python.exe"
-  "C:\Python311\python.exe"
-  "C:\Program Files\Python313\python.exe"
-  "C:\Program Files\Python312\python.exe"
-) do (
-  if not defined PY if exist "%%~C" (
-    "%%~C" -c "print(1)" 2>nul | findstr "^1$" >nul && set "PY=%%~C"
+
+rem 1.2 经典安装器布局 LOCALAPPDATA\Programs\Python\Python3xx
+for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+  if not defined PY if exist "%%~D\python.exe" (
+    "%%~D\python.exe" -c "print(1)" 2>nul | findstr "^1$" >nul && set "PY=%%~D\python.exe"
   )
 )
+
+rem 1.3 全机器安装 C:\Python3xx 与 C:\Program Files\Python3xx
+for /d %%D in ("C:\Python3*") do (
+  if not defined PY if exist "%%~D\python.exe" (
+    "%%~D\python.exe" -c "print(1)" 2>nul | findstr "^1$" >nul && set "PY=%%~D\python.exe"
+  )
+)
+for /d %%D in ("C:\Program Files\Python3*") do (
+  if not defined PY if exist "%%~D\python.exe" (
+    "%%~D\python.exe" -c "print(1)" 2>nul | findstr "^1$" >nul && set "PY=%%~D\python.exe"
+  )
+)
+
+rem 1.4 py 启动器注册的版本（解析 py -0p 每行最后一段路径）
+if not defined PY (
+  for /f "tokens=*" %%L in ('py -0p 2^>nul') do (
+    for %%P in (%%L) do (
+      if not defined PY if exist "%%P" (
+        echo %%P | findstr /i "python.exe$" >nul && set "PY=%%P"
+      )
+    )
+  )
+)
+
+rem 1.5 PATH 里的 python（能通过验证的才认，占位程序会被挡掉）
 if not defined PY (
   for /f "delims=" %%W in ('where python 2^>nul') do (
     if not defined PY (
       "%%W" -c "print(1)" 2>nul | findstr "^1$" >nul && set "PY=%%W"
+    )
+  )
+)
+
+rem 1.6 兜底：WorkBuddy 自带的解释器
+if not defined PY (
+  for /d %%D in ("%USERPROFILE%\.workbuddy\binaries\python\versions\*") do (
+    if not defined PY if exist "%%~D\python.exe" (
+      "%%~D\python.exe" -c "print(1)" 2>nul | findstr "^1$" >nul && set "PY=%%~D\python.exe"
     )
   )
 )
@@ -46,10 +76,10 @@ if not defined PY (
   echo   本机 PATH 里的 python 是 Microsoft Store 的占位程序，不能执行，
   echo   所以本地服务器起不来，浏览器自然打不开页面。
   echo.
-  echo   解决办法，任选其一：
+  echo   解决办法：
   echo     1^) 安装 Python 3：https://www.python.org/downloads/
   echo        安装时务必勾选 "Add python.exe to PATH"
-  echo     2^) 直接在 WorkBuddy 里说一句「启动服务器」，由助手代起
+  echo     2^) 或直接在 WorkBuddy 里说一句「启动服务器」，由助手代起
   echo.
   echo   页面本身没有损坏——它必须通过 HTTP 打开，
   echo   直接双击 index.html（file:// 协议）是打不开的。
