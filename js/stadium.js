@@ -1095,22 +1095,55 @@ export function buildAudience() {
   const spots = [];
   const P = STAND_PROFILE;
   const NSEC = P.sectors.length;
+  const D2R = Math.PI / 180;
   const stageX = S.pitch.center.x, stageZ = S.goalLineSouthZ + 6;
+
+  // 取某个角度上的真实座面剖面：在相邻两个测量扇区之间插值该层的 y0/y1/r0/r1。
+  // 早先按「扇区序号等分」撒点，而 standProfile 的扇区中心角并不等距，
+  // 于是约一成的棒落到层与层的夹缝里（悬空 2~8m，或被座面埋住），远看就是一丛竖向长条。
+  const tierAt = (thDeg, name) => {
+    for (let i = 0; i < NSEC; i++) {
+      const s0 = P.sectors[i];
+      const s1 = P.sectors[(i + 1) % NSEC];
+      let a0 = s0.theta;
+      let a1 = s1.theta;
+      if (a1 <= a0) a1 += 360;
+      let x = thDeg;
+      if (x < a0) x += 360;
+      if (x < a0 || x > a1) continue;
+      const ta = s0.tiers[name];
+      const tb = s1.tiers[name];
+      if (!ta && !tb) return null;
+      if (!ta) return tb;
+      if (!tb) return ta;
+      const k = (x - a0) / ((a1 - a0) || 1);
+      const m = (q, w) => q + (w - q) * k;
+      return { y0: m(ta.y0, tb.y0), y1: m(ta.y1, tb.y1), r0: m(ta.r0, tb.r0), r1: m(ta.r1, tb.r1) };
+    }
+    return null;
+  };
+  const radiusAt = (th, name, y, fb) => {
+    const deg = ((th / D2R) % 360 + 360) % 360;
+    const tf = tierAt(deg, name) || fb;
+    const k = clamp01((y - tf.y0) / ((tf.y1 - tf.y0) || 1));
+    return tf.r0 + (tf.r1 - tf.r0) * k;
+  };
+
   for (let s = 0; s < NSEC; s++) {
     const sec = P.sectors[s];
-    const th0 = (s / NSEC) * Math.PI * 2;
-    const dth = (Math.PI * 2) / NSEC;
+    const nxt = P.sectors[(s + 1) % NSEC];
+    const th0 = sec.theta * D2R;
+    const dth = ((((nxt.theta - sec.theta) % 360) + 540) % 360 - 180) * D2R;
     for (const name of ['lower', 'club', 'upper']) {
       const t = sec.tiers[name];
       if (!t) continue;
       const rows = Math.max(2, Math.round((t.y1 - t.y0) / A.rowRise));
       for (let r = 0; r <= rows; r++) {
         const y = t.y0 + ((t.y1 - t.y0) * r) / rows;
-        const f = (y - t.y0) / (t.y1 - t.y0);
-        const rr = t.r0 + (t.r1 - t.r0) * f - A.rInset;
-        const n = Math.max(1, Math.floor((rr * dth) / A.arcSpacing));
+        const n = Math.max(1, Math.floor(Math.abs(radiusAt(th0 + 0.5 * dth, name, y, t) * dth) / A.arcSpacing));
         for (let j = 0; j < n; j++) {
           const th = th0 + ((j + 0.5) / n) * dth;
+          const rr = radiusAt(th, name, y, t) - A.rInset;
           const lift = A.lift[0] + Math.random() * (A.lift[1] - A.lift[0]);
           const x = P.center.x + Math.cos(th) * rr + (Math.random() * 2 - 1) * A.jitter;
           const z = P.center.z + Math.sin(th) * rr + (Math.random() * 2 - 1) * A.jitter;

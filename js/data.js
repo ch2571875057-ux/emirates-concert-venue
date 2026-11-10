@@ -761,9 +761,9 @@ export const DATA = {
   camAudience: [
     { id: 'aud-pit',   title: '内场前排',    desc: '站区最前排',      cam: [-32.4, 8.8, 68],  look: [-32.4, 9.5, 100], fov: 60 },
     { id: 'aud-north', title: '北看台中排',  desc: '正对舞台',        cam: [-32.4, 21, -42],  look: [-32.4, 10, 100],  fov: 52 },
-    { id: 'aud-east',  title: '东看台',     desc: '侧面机位',        cam: [42, 20, 48],      look: [-32.4, 10, 92],   fov: 52 },
-    { id: 'aud-west',  title: '西看台',     desc: '侧面机位',        cam: [-108, 20, 48],    look: [-32.4, 10, 92],   fov: 52 },
-    { id: 'aud-south', title: '南看台·舞台后', desc: '越过舞台望星海',  cam: [-32.4, 36, 158],  look: [-32.4, 9, 30],    fov: 58 },
+    { id: 'aud-east',  title: '东看台',     desc: '侧面机位',        cam: [38.3, 18.7, 48.6], look: [-32.4, 13, 95],  fov: 55 },
+    { id: 'aud-west',  title: '西看台',     desc: '侧面机位',        cam: [-103.1, 18.7, 48.6], look: [-32.4, 13, 95], fov: 55 },
+    { id: 'aud-south', title: '南看台·舞台后', desc: '越过舞台望星海',  cam: [-32.4, 46, 164],  look: [-32.4, 14, 60],   fov: 56 },
   ],
 
   // ---------- 歌手运镜机位 ----------
