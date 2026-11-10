@@ -8,12 +8,15 @@
 
 **最省事：双击 `启动服务器.bat`** —— 它会自动定位到脚本所在目录、自动找到一个
 真正可用的 Python（跳过 Microsoft Store 的占位程序）、起服务并打开浏览器。
+**没有 Python 也能跑**：脚本会再找 Node.js，用 `server_nocache.mjs` 起同一个服务
+（同样发 `no-store` 头），端口、行为完全一致。
 
-手动启动：
+手动启动（二选一，都禁缓存，改完刷新即生效）：
 
 ```bash
-cd /e/concert1          # 或项目实际所在目录
-python server_nocache.py # 禁缓存版，改完刷新即生效
+cd /e/concert1           # 或项目实际所在目录
+python server_nocache.py # 有 Python 走这个
+node server_nocache.mjs  # 没 Python 走这个
 # 浏览器访问 http://127.0.0.1:8141/
 ```
 
@@ -21,8 +24,12 @@ python server_nocache.py # 禁缓存版，改完刷新即生效
 > `C:\Users\...\AppData\Local\Microsoft\WindowsApps\python.exe`，这是 Microsoft Store
 > 的**占位空壳**，执行任何命令都没有输出也不报错，`python -m http.server` 会静默失败，
 > 表现为「双击后浏览器打不开」。`启动服务器.bat` 通过真的执行一次 `print(1)` 来验证
-> 候选解释器，能正确跳过它。若要一劳永逸，建议装一个真正的 Python 3 并勾选
-> Add to PATH。
+> 候选解释器，能正确跳过它；Node 兜底分支同理，会真的跑一次 `--check` 才认。
+> 若要一劳永逸，建议装一个真正的 Python 3 并勾选 Add to PATH。
+>
+> 脚本里**故意不用 `timeout /t`**：有些机器 PATH 里先命中的是 GNU coreutils 的
+> `timeout`，不认 `/t` 参数会直接报错退出，服务其实起来了却被判成失败。
+> 现在改成 `ping -n 2` 睡 1 秒 + 轮询 curl，最多等 15 秒。
 
 依赖已全部本地化在 `vendor/`（three@0.169.0 及 addons，来自 unpkg），**断网可跑**。
 
