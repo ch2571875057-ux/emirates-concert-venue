@@ -546,20 +546,71 @@ function buildWaveTextLayer(cfg, W, side, WT, defaultText) {
   return mesh;
 }
 
-// 副屏文字重绘（开场秀切换/还原用）
-export function paintWaveText(mat, text) {
+// 副屏文字重绘（开场秀切换/还原、歌单曲名同步用）
+// 画布只有 1024 宽，中文长歌名（如「继续给十五岁的自己」）在固定 fontPx 下会溢出。
+// 注意：缩字号解决不了可读性——文字层贴在浪体卷边上，只有中间一段朝向镜头，
+// 字号压到 60px 以下屏幕上看不清。所以长文本优先折两行（每行都能用大字号），
+// 折行后仍超宽才降字号，最小到 WT.fontPxMin。
+export function paintWaveText(mat, text, opts) {
   const WT = DATA.concert.waveText;
   const cv = mat.map.image;
   const ctx = cv.getContext('2d');
+  const ratio = (opts && opts.padRatio != null) ? opts.padRatio : WT.padRatio;
+  const pad = (opts && opts.pad != null) ? opts.pad : ratio * cv.width;
+  const maxW = cv.width - pad * 2;
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = WT.glowColor;
   ctx.shadowColor = WT.shadowColor;
   ctx.shadowBlur = WT.shadowBlur;
-  ctx.font = `bold ${WT.fontPx}px Arial`;
-  ctx.fillText(text, cv.width / 2, cv.height / 2);
+  const minPx = WT.fontPxMin || 48;
+  let px = WT.fontPx;
+  ctx.font = `bold ${px}px Arial`;
+  const w0 = ctx.measureText(text).width;
+  // 单行放不下：折两行（每行都能吃满字号）。整体自动排版只在显式 opts.fit 时启用，
+  // 默认保持原来的固定字号一行（开场秀的 LIVE IN CONCERT / ARE YOU READY !! 就是
+  // 故意让宽字溢出画布的，靠浪体卷边自然裁出"贴边滚动"的观感）。
+  let lines = [text];
+  const LH = 1.02; // 两行行距（倍字号）；中文行间距再大就压到画布上下边
+  const fit = !!(opts && opts.fit);
+  if (fit && w0 > maxW && text.length >= 4) {
+    const two = balanceLines(ctx, text, px);
+    if (two) {
+      lines = two;
+      // 两行要挤进同一条文字带：总高不能超过画布的 WT.wrapFill
+      px = Math.min(px, Math.floor((cv.height * WT.wrapFill) / (2 * LH)));
+      const wMax = Math.max(ctx.measureText(two[0]).width, ctx.measureText(two[1]).width);
+      const scale = px / WT.fontPx;
+      if (wMax * scale > maxW) px = Math.max(minPx, Math.floor(px * (maxW / (wMax * scale))));
+    }
+  }
+  if (fit && lines.length === 1 && w0 > maxW) px = Math.max(minPx, Math.floor(px * (maxW / w0)));
+  ctx.font = `bold ${px}px Arial`;
+  if (lines.length === 2) {
+    const lh = px * LH;
+    const cy = cv.height / 2;
+    ctx.fillText(lines[0], cv.width / 2, cy - lh / 2);
+    ctx.fillText(lines[1], cv.width / 2, cy + lh / 2);
+  } else {
+    ctx.fillText(lines[0], cv.width / 2, cv.height / 2);
+  }
   ctx.shadowBlur = 0;
   mat.map.needsUpdate = true;
+  return { px, lines };
+}
+
+// 把一段中文按"两行宽度尽量接近"折开；英文按空格优先。
+// 返回 [上, 下] 或 null（找不到合理折点）。
+function balanceLines(ctx, text, px) {
+  let best = null, bestDiff = Infinity;
+  const measure = (s) => ctx.measureText(s).width;
+  for (let i = 1; i < text.length; i++) {
+    const a = text.slice(0, i), b = text.slice(i);
+    if (b.startsWith(' ') || a.endsWith(' ')) continue;
+    const diff = Math.abs(measure(a) - measure(b));
+    if (diff < bestDiff) { bestDiff = diff; best = [a, b]; }
+  }
+  return best;
 }
 
 function buildWaves() {

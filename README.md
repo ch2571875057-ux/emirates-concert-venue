@@ -38,6 +38,10 @@ node server_nocache.mjs  # 没 Python 走这个
 - **侧边栏**：全高手风琴分组侧边栏（🎥视角 / 💡灯光 / 👥观众 / 🌊人浪 / 🎤歌手 / 🎆开场秀 / 🎮漫游），
   点击组头展开收起；可整体收起成 48px 图标轨（点图标直达分组）；底部状态栏实时显示
   视角名 · 时间 · FPS · draw calls；`?sb=collapsed` 初始收起，≤640px 小屏自动收起
+- **歌单（右侧）**：固定曲目单 —— 继续给十五岁的自己 / 树读 / 疑疑疑 / 如期 / 生长（王俊凯）。
+  点一条高亮该曲并在舞台两侧海浪副屏写出歌名（长歌名自动降字号）；
+  长名如「继续给十五岁的自己」会缩到能完整落在卷边可见带内。
+  `?pl=collapsed` 初始收起；点击按钮可整体收成 52px 竖条
 - **视角**：侧边栏视角分组切换 鸟瞰全景 / 内场看舞台 / 看台视角 / 场馆外观 / 屋面俯视 / 自由，镜头自动补间并打字幕
 - **时间**：拖动 0–24h 滑杆，天空/太阳/雾/Bloom/灯光随时间连续变化（默认 21:00 演唱会夜景）
 - **灯光**：常亮 / 频闪 / 扫描三模式；**灯组开关**（舞台灯光/观众闪光灯联锁）与**场馆泛光**（环境照明/LED 环带）完全解耦，可任意组合
@@ -62,6 +66,8 @@ node server_nocache.mjs  # 没 Python 走这个
 &lightshow=b             # 直接开启灯光秀 B（舞台中央光团，循环播放）
 &lsT=秒                  # 冻结灯光秀到指定时刻；&lsT=off 验证关闭后的归位
 &lsdump=秒|off            # 把灯光秀各载体的真实数值（环带/屏 uniform、光束 alpha、看台 48 桶）打到 #loading-error
+&song=1..5               # 直接选中第 N 首（同步写到舞台副屏），配 &ui=0&view=stagefront 截图验收
+&pl=collapsed            # 右侧歌单初始收起
 ```
 
 headless 截图流水线（Edge 示例）：
@@ -140,7 +146,7 @@ msedge --headless=new --enable-unsafe-swiftshader \
 ```
 index.html      页面骨架 + import map + HUD
 styles.css      视觉系统
-js/app.js       渲染循环、相机补间、时间/氛围驱动、UI 状态机、QA 参数
+js/app.js       渲染循环、相机补间、时间/氛围驱动、UI 状态机、右侧歌单、QA 参数
 js/stadium.js   改造与设备层：convertGLB（删球门/删照片地面/换程序化地面）
                 buildField（地坪/站区/隔离栏）buildStage（海洋主题舞台 v2/海浪副屏/LED）
                 buildSound（音响塔）buildLights（灯光三模式）

@@ -130,6 +130,10 @@ export const DATA = {
       defaultText: 'LIVE IN CONCERT',
       showText: 'ARE YOU READY !!',
       fontPx: 150,
+      fontPxMin: 28,             // 长歌名自动降字号的下限（见 stadium.js paintWaveText）
+      padRatio: 0.06,            // 画布左右安全边距（占画布宽比例）
+      songPadRatio: 0.30,        // 歌单曲名专用边距：浪体两侧卷边会转离镜头，文字要收进中间可见带
+      wrapFill: 0.70,            // 两行排版时总高占画布高的比例（留上下余量，别被浪尖/浪底裁）
       glowColor: '#cfeeff', shadowColor: '#5ad8ff', shadowBlur: 26,
       scrollSpeed: 0.05,         // 开场秀 P1 滚动速度（UV/秒）
     },
@@ -567,6 +571,19 @@ export const DATA = {
   // ---------- 默认状态 ----------
   defaults: {
     time: 21.0,                      // 默认夜景 21:00
+  },
+
+  // ---------- 演出歌单（右侧面板展示；数组顺序即曲目序号）----------
+  playlist: {
+    title: '歌单',
+    sub: '王俊凯 · 演唱会曲目',
+    songs: [
+      '继续给十五岁的自己',
+      '树读',
+      '疑疑疑',
+      '如期',
+      '生长',
+    ],
   },
 
   colors: {

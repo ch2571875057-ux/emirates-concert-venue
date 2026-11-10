@@ -34,7 +34,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05070d; }
 /* ---------- 侧边栏 ---------- */
 #hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
 #hud.hidden { display: none; }
-#sidebar, #toast-box { pointer-events: auto; }
+#sidebar, #playlist, #toast-box { pointer-events: auto; }
 #sidebar {
   position: absolute; top: 14px; left: 14px; width: 248px;
   max-height: calc(100vh - 28px);
@@ -123,6 +123,68 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05070d; }
 .hud-btn:hover { background: rgba(111,168,255,.18); }
 .hud-btn.on { background: #2d5cc0; border-color: #6fa8ff; color: #fff; }
 .sb-btn-icon { font-size: 13px; }
+
+/* ---------- 右侧歌单 ---------- */
+#playlist {
+  position: absolute; top: 14px; right: 14px; width: 248px;
+  max-height: calc(100vh - 28px);
+  display: flex; flex-direction: column;
+  background: var(--panel-bg); border: 1px solid var(--panel-border);
+  border-radius: 12px; color: var(--text);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+  transition: width .28s ease;
+}
+#playlist.collapsed { width: 52px; max-height: none; }
+#playlist.collapsed .pl-title,
+#playlist.collapsed .pl-list,
+#playlist.collapsed .pl-foot { display: none; }
+#playlist.collapsed .pl-head { justify-content: center; padding: 10px 0 6px; border-bottom: none; }
+
+.pl-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 12px 10px; border-bottom: 1px solid rgba(120,160,255,.15);
+  flex: none;
+}
+.pl-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pl-name { font-size: 14px; font-weight: 700; letter-spacing: 1px; white-space: nowrap; }
+.pl-sub { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.pl-list {
+  list-style: none; flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 8px 8px 10px;
+}
+.pl-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; margin: 3px 0; border-radius: 8px;
+  border: 1px solid transparent; cursor: default;
+  transition: background .18s ease, border-color .18s ease;
+}
+.pl-item:hover { background: rgba(111,168,255,.13); border-color: rgba(111,168,255,.22); }
+.pl-item.active { background: rgba(63,111,216,.28); border-color: rgba(111,168,255,.45); }
+.pl-idx {
+  flex: none; font: 11px/1 Consolas, monospace; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; letter-spacing: .5px;
+}
+.pl-item.active .pl-idx { color: #cfe0ff; }
+.pl-name-txt {
+  font-size: 12.5px; line-height: 1.35; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pl-dot {
+  flex: none; width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(111,168,255,.45); margin-left: auto;
+}
+.pl-item.active .pl-dot { background: #7fd0ff; box-shadow: 0 0 8px #7fd0ff; }
+.pl-foot {
+  flex: none; padding: 7px 12px;
+  border-top: 1px solid rgba(120,160,255,.15);
+  font: 10px/1.5 Consolas, monospace; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* debug 覆盖层在右下角，避开右上角的歌单面板 */
+body.debug #debug-info { top: auto; bottom: 12px; right: 14px; }
 
 /* ---------- toast ---------- */
 #toast-box { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; }

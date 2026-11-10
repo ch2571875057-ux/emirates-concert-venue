@@ -10,7 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { DATA } from './data.js';
-import { convertGLB, updateLights, updateAudience, updateCrowd, buildCrowd, buildSinger, updateSinger, buildBand, updateBand, updateLightShowRibbon, ensureRibbonShader, updateLightShowBody, lightShowOf } from './stadium.js';
+import { convertGLB, updateLights, updateAudience, updateCrowd, buildCrowd, buildSinger, updateSinger, buildBand, updateBand, updateLightShowRibbon, ensureRibbonShader, updateLightShowBody, lightShowOf, paintWaveText } from './stadium.js';
 import { pitGrid } from './pixel.js';
 import { lightShowAt, lightShowDuration, lightShowPhaseAt, LS_PHASES } from './lightshow.js';
 import { lightShowBAt, lightShowBDuration, lightShowBPhaseAt, LSB_PHASES } from './lightshowb.js';
@@ -30,7 +30,7 @@ const loadingPct = document.getElementById('loading-pct');
 const loadingError = document.getElementById('loading-error');
 const hudEl = document.getElementById('hud');
 const debugEl = document.getElementById('debug-info');
-if (debugMode) debugEl.classList.remove('hidden');
+if (debugMode) { debugEl.classList.remove('hidden'); document.body.classList.add('debug'); }
 
 export function toast(msg) {
   if (!uiVisible) return;
@@ -235,6 +235,16 @@ Promise.all([
   if (uiVisible) {
     hudEl.classList.remove('hidden');
     if (!hudBuilt) buildHUD();
+    if (!playlistBuilt) buildPlaylist();
+  }
+  // QA：?song=1..5 直接选中第 N 首（写到舞台副屏，便于 headless 截图验收）
+  if (Q.get('song') != null) {
+    const n = parseInt(Q.get('song'), 10);
+    if (isFinite(n) && n >= 1 && n <= DATA.playlist.songs.length) {
+      if (!playlistBuilt) buildPlaylist();
+      const el = playlistItems[n - 1];
+      if (el) el.click();
+    }
   }
   toast('球场已载入');
   // QA：?pixdump=heart 把真实渲染用的 instanceColor 按点阵网格输出到 #loading-error，
@@ -688,6 +698,73 @@ const VIEW_ICONS = {
   'sg-close': '🎯', 'sg-side': '📽️', 'sg-back': '🌌', 'sg-orbit': '🔄',
 };
 
+// ---------- 右侧歌单 ----------
+// 歌单只做展示：点一条不改变演出，只高亮当前曲目并把曲名写到舞台副屏（纯 UI，不进渲染循环）
+let playlistBuilt = false;
+let currentSong = 0;
+let songChosen = -1;        // 用户主动选过的曲目（-1 = 从未选过，开场秀结束后不抢文案）
+let _showWasActive = false; // 开场秀→结束的边沿检测
+
+function buildPlaylist() {
+  const PL = DATA.playlist;
+  if (!PL) return;
+  const list = document.getElementById('pl-list');
+  document.getElementById('pl-name').textContent = PL.title || '歌单';
+  document.getElementById('pl-sub').textContent = PL.sub || '';
+  const foot = document.getElementById('pl-foot');
+  const items = [];
+  PL.songs.forEach((name, i) => {
+    const li = document.createElement('li');
+    li.className = 'pl-item';
+    li.dataset.idx = i;
+    const num = document.createElement('span');
+    num.className = 'pl-idx';
+    num.textContent = String(i + 1).padStart(2, '0');
+    const txt = document.createElement('span');
+    txt.className = 'pl-name-txt';
+    txt.textContent = name;
+    const dot = document.createElement('span');
+    dot.className = 'pl-dot';
+    li.append(num, txt, dot);
+    li.onclick = () => selectSong(i);
+    list.appendChild(li);
+    items.push(li);
+  });
+  playlistItems = items;
+  selectSong(0, true);
+  if (Q.get('pl') === 'collapsed') {
+    document.getElementById('playlist').classList.add('collapsed');
+    document.getElementById('pl-toggle').textContent = '⟨';
+  }
+  playlistBuilt = true;
+
+  function selectSong(i, silent) {
+    currentSong = i;
+    items.forEach((el, k) => el.classList.toggle('active', k === i));
+    foot.textContent = `${String(i + 1).padStart(2, '0')} / ${String(PL.songs.length).padStart(2, '0')} · ${PL.songs[i]}`;
+    // 只在用户主动点击时把曲目打到舞台副屏；首次静默构建保持场景默认文案不动
+    if (!silent) { songChosen = i; paintSongOnStage(i); toast(`曲目 ${i + 1} · ${PL.songs[i]}`); }
+  }
+  return { select: selectSong };
+}
+
+// 把当前曲目写到舞台两侧海浪副屏（开场秀进行中不抢字，等它演完再同步）
+function paintSongOnStage(i) {
+  const PL = DATA.playlist;
+  if (!PL || !PL.songs || !PL.songs[i]) return;
+  const mats = stadiumGroup?.userData?.stageGroup?.userData?.waveTextMats || [];
+  if (!mats.length) return;
+  // 副屏只写歌名（不带序号）：序号在左侧歌单里已经能看到，屏幕上留更多空间给字
+  const label = PL.songs[i];
+  // 歌名比默认大标题长，且文字层贴在浪体卷边上（两侧会转离镜头）。
+  // fit:true 打开自动排版：放不下就折两行，仍超宽才降字号，保证歌名完整可读。
+  for (const m of mats) {
+    paintWaveText(m, label, { fit: true, padRatio: DATA.concert.waveText.songPadRatio });
+    m.map.offset.x = 0;
+  }
+}
+let playlistItems = [];
+
 function buildHUD() {
   const box = document.getElementById('hud-groups');
   const rail = document.getElementById('sb-rail');
@@ -1091,6 +1168,9 @@ function tickBody() {
   _p('atmos');
   if (show) show.update(dt);
   if (show?.r?.fireworks) show.r.fireworks.update(dt);
+  // 开场秀结束时会把副屏文字还原成默认文案；若用户已选过曲目就把歌名重新写回
+  if (_showWasActive && !(show && show.active)) { _showWasActive = false; if (songChosen >= 0) paintSongOnStage(songChosen); }
+  if (show && show.active) _showWasActive = true;
   _p('show');
   // 灯光秀自身时钟：只在启用时推进（改 timeScale 只影响它，不动常态呼吸）
   const lsDef = lightState.lightShowVariant === 'b' ? DATA.concert.lightShowB : DATA.concert.lightShow;
@@ -1208,4 +1288,8 @@ window.__app = {
   get band() { return bandGroup; },
   // 人浪光效：外部可 setFx('stripe') 切模式、dumpWaveFx() 出剖面
   setFx, syncFx, dumpWaveFx,
+  // 歌单：外部可 selectSong(i) 切曲目（同时写到舞台副屏）
+  get playlist() { return DATA.playlist; },
+  get songIndex() { return currentSong; },
+  selectSong: (i) => { const el = playlistItems[i]; if (el) el.click(); },
 };

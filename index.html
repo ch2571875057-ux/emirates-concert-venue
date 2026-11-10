@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>酋长球场 · 演唱会场馆</title>
-<link rel="stylesheet" href="styles.css?v=2">
+<link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 <div id="app"></div>
@@ -32,6 +32,19 @@
     <div class="sb-body" id="hud-groups"></div>
     <div class="sb-status" id="sb-status"></div>
   </aside>
+
+  <aside id="playlist">
+    <div class="pl-head">
+      <div class="pl-title">
+        <span class="pl-name" id="pl-name">歌单</span>
+        <span class="pl-sub" id="pl-sub"></span>
+      </div>
+      <button id="pl-toggle" class="sb-icon-btn" title="收起/展开歌单">⟩</button>
+    </div>
+    <ol class="pl-list" id="pl-list"></ol>
+    <div class="pl-foot" id="pl-foot"></div>
+  </aside>
+
   <div id="caption"></div>
   <div id="toast-box"></div>
 </div>
@@ -72,6 +85,11 @@ window.addEventListener('DOMContentLoaded', function () {
   btn.onclick = function () {
     var collapsed = document.getElementById('sidebar').classList.toggle('collapsed');
     btn.textContent = collapsed ? '⟩' : '⟨';
+  };
+  var plBtn = document.getElementById('pl-toggle');
+  plBtn.onclick = function () {
+    var collapsed = document.getElementById('playlist').classList.toggle('collapsed');
+    plBtn.textContent = collapsed ? '⟨' : '⟩';
   };
 });
 </script>
