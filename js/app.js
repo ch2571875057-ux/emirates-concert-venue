@@ -247,6 +247,8 @@ Promise.all([
     const raw = Q.get('lsdump');
     dumpLightShow(raw === 'off' ? NaN : (parseFloat(raw) || 0));
   }
+  // QA：?bench=1 实例写色 CPU 微基准（逐档 ms/帧）
+  if (Q.get('bench') === '1') { window.__bench = benchSticks; benchSticks(); }
 }).catch((err) => {
   loadingError.textContent = '模型加载失败：' + (err && err.message ? err.message : err) +
     '\n请确认通过 HTTP 访问（不能用 file:// 直接打开）';
@@ -419,12 +421,15 @@ function dumpLightShow(t) {
   } else lines.push(`[${tag}] beams MISSING`);
   // 看台应援棒：48 桶平均亮度（真实 instanceColor）
   if (audienceGroup && audienceGroup.userData.pixelEntries) {
+    // 量的是「发光材质的有效倍率」：有 instanceColor 就是它的均值，
+    // 没有（着色器走 #else 分支、vColor 不参与）就是 1.0 —— 两种情况在屏幕上等价，
+    // 所以直接比这个数才不会被「有没有分配缓冲区」这种实现细节误导。
     const n = 48, sum = new Float64Array(n), cnt = new Float64Array(n);
     let noColor = 0;
     for (const e of audienceGroup.userData.pixelEntries) {
       const ic = e.mesh && e.mesh.instanceColor;
-      if (!ic) { noColor++; continue; }
       const k = Math.min(n - 1, Math.max(0, Math.floor(e.u * n)));
+      if (!ic) { noColor++; sum[k] += 1; cnt[k]++; continue; }
       const i3 = e.idx * 3;
       sum[k] += (ic.array[i3] + ic.array[i3 + 1] + ic.array[i3 + 2]) / 3;
       cnt[k]++;
@@ -439,6 +444,78 @@ function dumpLightShow(t) {
 function toStrRamp(arr) {
   const mx = Math.max(...arr, 1e-4);
   return arr.map((v) => FX_RAMP[Math.min(FX_RAMP.length - 1, Math.round((v / mx) * (FX_RAMP.length - 1)))]).join('');
+}
+
+// ---------- QA：实例写色的 CPU 微基准（?bench=1）----------
+// headless 下 FPS 不可信（虚拟时间不驱动 rAF），但结构性热点正好在 CPU 这一层：
+// 每帧对 8870 支看台棒 + 1550 支内场棒逐实例写 instanceColor / 平移分量。
+// 这里直接给 updateAudience + updateCrowd 计时，warmup 后取 reps 帧均值。
+// 'off' 一档跳过了全部应援棒工作、只留 700 片小方片，用它当固定开销基线。
+function benchSticks() {
+  if (!audienceGroup || !crowdGroup) {
+    loadingError.textContent += '[bench] audience/crowd 未就绪\n';
+    return;
+  }
+  const reps = 120, warm = 20;
+  const saved = {
+    audienceMode: lightState.audienceMode, wave: lightState.wave,
+    lightShow: lightState.lightShow, lightShowT: lightState.lightShowT,
+    lsFreeze: lightState.lsFreeze, pixelPattern: lightState.pixelPattern,
+    pixelScroll: lightState.pixelScroll, pixelShift: lightState.pixelShift,
+  };
+  const DT = 0.016;
+  const stageZ = DATA.stadium.goalLineSouthZ + 6;
+  const origin = { x: DATA.stadium.pitch.center.x, z: stageZ };
+  // 每档：setup 一次性配置，pre(i) 每帧微调（灯光秀时钟必须逐帧推进，否则权重不变）
+  const cases = [
+    ['off', () => { lightState.lampBanks = false; }, null],
+    ['normal', () => { lightState.lampBanks = true; lightState.audienceMode = 'normal'; lightState.wave = null; }, null],
+    ['wave', () => {
+      lightState.lampBanks = true; lightState.audienceMode = 'normal';
+      lightState.wave = { origin, t: 0, speed: 12, width: 6, ampBoost: 1.4, starts: [0, 3] };
+    }, (i) => { lightState.wave.t = i * DT; }],
+    ['stripe', () => { lightState.lampBanks = true; lightState.audienceMode = 'stripe'; lightState.wave = null; }, null],
+    ['meet', () => { lightState.lampBanks = true; lightState.audienceMode = 'meet'; lightState.wave = null; }, null],
+    ['chase', () => { lightState.lampBanks = true; lightState.audienceMode = 'chase'; lightState.wave = null; }, null],
+    ['tide', () => { lightState.lampBanks = true; lightState.audienceMode = 'tide'; lightState.wave = null; }, null],
+    ['pixel', () => { lightState.lampBanks = true; lightState.audienceMode = 'pixel'; lightState.wave = null; lightState.pixelScroll = false; }, null],
+    ['ripple', () => { lightState.lampBanks = true; lightState.audienceMode = 'ripple'; lightState.wave = null; }, null],
+    ['spiral', () => { lightState.lampBanks = true; lightState.audienceMode = 'spiral'; lightState.wave = null; }, null],
+    ['duet', () => { lightState.lampBanks = true; lightState.audienceMode = 'duet'; lightState.wave = null; }, null],
+    ['lightshow', () => {
+      lightState.lampBanks = true; lightState.audienceMode = 'normal'; lightState.wave = null;
+      lightState.lightShow = true; lightState.lightShowVariant = 'a'; lightState.lsFreeze = false;
+    }, (i) => { lightState.lightShowT = i * DT; }],
+  ];
+  const out = [];
+  try {
+    for (const [label, setup, pre] of cases) {
+      setup();
+      if (pre) { for (let i = 0; i < warm; i++) pre(i); }
+      for (let i = 0; i < warm; i++) {
+        updateAudience(audienceGroup, i * DT, lightState);
+        updateCrowd(crowdGroup, i * DT, lightState);
+      }
+      const t0 = performance.now();
+      for (let i = 0; i < reps; i++) {
+        if (pre) pre(warm + i);
+        updateAudience(audienceGroup, (warm + i) * DT, lightState);
+        updateCrowd(crowdGroup, (warm + i) * DT, lightState);
+      }
+      out.push([label, (performance.now() - t0) / reps]);
+    }
+  } finally {
+    // 还原现场：基准跑完后把状态放回原样，避免污染截图与后续 QA
+    Object.assign(lightState, saved);
+    lightState.lampBanks = true;
+  }
+  const off = out[0][1];
+  const lines = [`[bench] reps=${reps} unit=ms/frame (updateAudience+updateCrowd)`];
+  for (const [label, ms] of out) {
+    const d = label === 'off' ? '' : ` sticks=${(ms - off).toFixed(3)}`;
+    lines.push(`[bench] ${label.padEnd(9, ' ')} ${ms.toFixed(3)}${d}`);
+  }
+  loadingError.textContent += lines.join('\n') + '\n';
 }
 
 // ---------- 初始机位 ----------

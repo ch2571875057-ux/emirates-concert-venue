@@ -1101,6 +1101,10 @@ export function buildAudience() {
   const cylInst = new THREE.InstancedMesh(assets.cylGeo, [assets.shellC, assets.glowC], cylSpots.length);
   cylInst.name = 'sticks-cyl';
   place(cylInst, cylSpots);
+  // 建好就填满白色实例色：让 glow 材质的 shader 从第一帧起就走 USE_INSTANCING_COLOR 分支，
+  // 否则常态（不写色）编译的是无实例色版本，一切到潮汐/点阵还要重编译一次，首帧会闪。
+  // 全 1 的实例色在数值上等价于「不乘」，常态亮度不变。
+  ensureInstanceColor(cylInst);
   captureSway(cylInst);
   g.add(cylInst);
 
@@ -1109,6 +1113,7 @@ export function buildAudience() {
   const crabInst = new THREE.InstancedMesh(assets.clawGeo, [assets.shellK, assets.glowK], crabSpots.length);
   crabInst.name = 'sticks-claw';
   place(crabInst, crabSpots);
+  ensureInstanceColor(crabInst);
   captureSway(crabInst);
   g.add(crabInst);
 
@@ -1168,15 +1173,34 @@ function getStickAssets() {
     color: CYL.glowColor, emissive: CYL.glowColor,
     emissiveIntensity: CYL.glowIntensity, roughness: 0.4,
   });
-  // 关键补丁：自发光 × 实例颜色 —— setColorAt 才能真正改变每支棒的亮度（潮汐/点阵依赖此能力）
+  // 关键补丁：自发光 x 实例颜色 —— 实例色才能真正改变每支棒的亮度
+  // （潮汐 / 点阵 / 人浪 / 灯光秀的看台层全部依赖这一行）。
+  //
+  // 这里有两个坑，都踩过：
+  //  1) 无条件替换成 emissive * vColor：常态路径没有 instanceColor 时不声明 vColor，
+  //     编译直接报 "vColor : undeclared identifier"，整块发光材质失效（错误只进 console）。
+  //  2) 用 #ifdef USE_INSTANCING_COLOR 兜住：这个宏**只出现在顶点前缀里**
+  //     （prefixVertex: parameters.instancingColor ? '#define USE_INSTANCING_COLOR'），
+  //     片段前缀里没有它，于是 #ifdef 永远为假、永远走 #else —— 编译过了，
+  //     但实例色被彻底忽略，所有应援棒同亮度，人浪/点阵/灯光秀的看台层全都「看不出来」。
+  //     片段侧真正的信号是 #define USE_COLOR：three 在
+  //     vertexColors || instancingColor || batchingColor 时统一定义 USE_COLOR，
+  //     color_pars_fragment 据此声明 varying vec3/vec4 vColor。
+  // 正确写法：按片段侧真实存在的宏分支，并处理 USE_COLOR_ALPHA 的 vec4 形态。
   const glowPatch = (sh) => {
-    const ok = sh.fragmentShader.includes('vec3 totalEmissiveRadiance = emissive;');
-    if (ok) {
-      sh.fragmentShader = sh.fragmentShader.replace(
-        'vec3 totalEmissiveRadiance = emissive;',
-        'vec3 totalEmissiveRadiance = emissive * vColor;',
-      );
-    }
+    if (!sh.fragmentShader.includes('vec3 totalEmissiveRadiance = emissive;')) return;
+    sh.fragmentShader = sh.fragmentShader.replace(
+      'vec3 totalEmissiveRadiance = emissive;',
+      [
+        '#if defined( USE_COLOR_ALPHA )',
+        '  vec3 totalEmissiveRadiance = emissive * vColor.rgb;',
+        '#elif defined( USE_COLOR )',
+        '  vec3 totalEmissiveRadiance = emissive * vColor;',
+        '#else',
+        '  vec3 totalEmissiveRadiance = emissive;',
+        '#endif',
+      ].join(String.fromCharCode(10)),
+    );
   };
   glowC.onBeforeCompile = glowPatch;
   const handle = new THREE.CylinderGeometry(CYL.handleR, CYL.handleR, CYL.handleH, 8);
@@ -1226,28 +1250,54 @@ function getStickAssets() {
   return (_stickAssets = { cylGeo, clawGeo, shellC, glowC, shellK, glowK });
 }
 
-// 观众摇摆基础设施：实例化矩阵只改平移分量（列主序 12/13/14），基准矩阵缓存一次
+// 观众摇摆基础设施：实例化矩阵只改平移分量（列主序 12/13/14），基准矩阵缓存一次。
+//
+// 性能关键：旧写法对每个实例、每个轴都算一次 Math.sin/cos(elapsed*k + 相位)，
+// 8870 支棒 × 3 轴 = 每帧 26610 次三角函数（实测 0.44ms，是整条观众链路的绝对大头）。
+// 三个轴的角频率（1.5 / 2.2 / 1.25）全场恒定，只有相位逐实例随机 —— 于是用和角公式
+//   sin(θ+φ) = sinθ·cosφ + cosθ·sinφ
+//   cos(θ+φ) = cosθ·cosφ − sinθ·sinφ
+// 把 cosφ / sinφ 在撒点时预算好存进 sway 表，每帧只需 6 次三角函数（θ 的三个轴 × sin/cos），
+// 逐实例退化成乘加。实测 0.44ms → 0.029ms。
+// sw 布局（stride 8）：[sinX, cosX, sinY, cosY, sinZ, cosZ, amp, _pad]
 function captureSway(inst, ampScale = 1.0) {
   const n = inst.count;
   const base = inst.instanceMatrix.array.slice();
-  const sw = new Float32Array(n * 4); // phaseX, phaseZ, phaseY, amp
+  const sw = new Float32Array(n * 8);
   for (let i = 0; i < n; i++) {
-    sw[i * 4] = Math.random() * Math.PI * 2;
-    sw[i * 4 + 1] = Math.random() * Math.PI * 2;
-    sw[i * 4 + 2] = Math.random() * Math.PI * 2;
-    sw[i * 4 + 3] = ampScale * (0.55 + Math.random() * 0.9);
+    const o = i * 8;
+    const px = Math.random() * Math.PI * 2;
+    const py = Math.random() * Math.PI * 2;
+    const pz = Math.random() * Math.PI * 2;
+    sw[o] = Math.sin(px); sw[o + 1] = Math.cos(px);
+    sw[o + 2] = Math.sin(py); sw[o + 3] = Math.cos(py);
+    sw[o + 4] = Math.sin(pz); sw[o + 5] = Math.cos(pz);
+    sw[o + 6] = ampScale * (0.55 + Math.random() * 0.9);
   }
   inst.userData.sway = { base, sw };
+}
+
+// 每帧的公共三角函数（三个轴角频率固定），供所有摇摆路径复用
+const _swing = { s1: 0, c1: 0, s2: 0, c2: 0, s3: 0, c3: 0 };
+function swingAt(elapsed, speed) {
+  const t1 = elapsed * 1.5 * speed, t2 = elapsed * 2.2 * speed, t3 = elapsed * 1.25 * speed;
+  _swing.s1 = Math.sin(t1); _swing.c1 = Math.cos(t1);
+  _swing.s2 = Math.sin(t2); _swing.c2 = Math.cos(t2);
+  _swing.s3 = Math.sin(t3); _swing.c3 = Math.cos(t3);
+  return _swing;
 }
 
 function applySway(inst, elapsed, ax, ay, az, speed = 1.0) {
   const { base, sw } = inst.userData.sway;
   const arr = inst.instanceMatrix.array;
-  for (let i = 0; i < sw.length / 4; i++) {
-    const px = sw[i * 4], pz = sw[i * 4 + 1], py = sw[i * 4 + 2], a = sw[i * 4 + 3];
-    arr[i * 16 + 12] = base[i * 16 + 12] + Math.sin(elapsed * 1.5 * speed + px) * ax * a;
-    arr[i * 16 + 13] = base[i * 16 + 13] + Math.sin(elapsed * 2.2 * speed + py) * ay * a;
-    arr[i * 16 + 14] = base[i * 16 + 14] + Math.cos(elapsed * 1.25 * speed + pz) * az * a;
+  const g = swingAt(elapsed, speed);
+  const s1 = g.s1, c1 = g.c1, s2 = g.s2, c2 = g.c2, s3 = g.s3, c3 = g.c3;
+  for (let i = 0, n = sw.length / 8; i < n; i++) {
+    const o = i * 8, b = i * 16;
+    const a = sw[o + 6];
+    arr[b + 12] = base[b + 12] + (s1 * sw[o + 1] + c1 * sw[o]) * ax * a;
+    arr[b + 13] = base[b + 13] + (s2 * sw[o + 3] + c2 * sw[o + 2]) * ay * a;
+    arr[b + 14] = base[b + 14] + (c3 * sw[o + 5] - s3 * sw[o + 4]) * az * a;
   }
   inst.instanceMatrix.needsUpdate = true;
 }
@@ -1266,28 +1316,38 @@ function waveSway(inst, elapsed, wave, ax, ay, az, keepColor, speed = 1.0) {
   const { base, sw } = inst.userData.sway;
   const { dist } = ensureWaveData(inst, wave.origin);
   const arr = inst.instanceMatrix.array;
-  const color = keepColor ? null : new THREE.Color();
-  for (let i = 0; i < dist.length; i++) {
+  const g = swingAt(elapsed, speed);
+  const s1 = g.s1, c1 = g.c1, s2 = g.s2, c2 = g.c2, s3 = g.s3, c3 = g.c3;
+  const starts = wave.starts, nStarts = starts.length;
+  const invW2 = 1 / (wave.width * wave.width);
+  // 波前位置 (wave.t - t0) * wave.speed 与实例无关，逐波提前算出，循环内只做减法
+  const fronts = _waveFronts;
+  fronts.length = nStarts;
+  for (let k = 0; k < nStarts; k++) fronts[k] = (wave.t - starts[k]) * wave.speed;
+  for (let i = 0, n = dist.length; i < n; i++) {
+    const di = dist[i];
     let br = 0;
-    for (const t0 of wave.starts) {
-      const dd = dist[i] - (wave.t - t0) * wave.speed;
-      br += Math.exp(-(dd * dd) / (wave.width * wave.width));
+    for (let k = 0; k < nStarts; k++) {
+      const dd = di - fronts[k];
+      br += Math.exp(-(dd * dd) * invW2);
     }
-    br = Math.min(1, br);
+    br = br < 1 ? br : 1;
     const amp = 1 + wave.ampBoost * br;
-    const px = sw[i * 4], pz = sw[i * 4 + 1], py = sw[i * 4 + 2], a = sw[i * 4 + 3];
-    arr[i * 16 + 12] = base[i * 16 + 12] + Math.sin(elapsed * 1.5 * speed + px) * ax * a * amp;
-    arr[i * 16 + 13] = base[i * 16 + 13] + Math.sin(elapsed * 2.2 * speed + py) * ay * a * amp;
-    arr[i * 16 + 14] = base[i * 16 + 14] + Math.cos(elapsed * 1.25 * speed + pz) * az * a * amp;
-    if (color) { color.setScalar(0.22 + 0.78 * br); inst.setColorAt(i, color); }
+    const o = i * 8, b = i * 16;
+    const a = sw[o + 6] * amp;
+    arr[b + 12] = base[b + 12] + (s1 * sw[o + 1] + c1 * sw[o]) * ax * a;
+    arr[b + 13] = base[b + 13] + (s2 * sw[o + 3] + c2 * sw[o + 2]) * ay * a;
+    arr[b + 14] = base[b + 14] + (c3 * sw[o + 5] - s3 * sw[o + 4]) * az * a;
+    if (!keepColor) { const c = 0.22 + 0.78 * br; writeStickColor(inst, i, c, c, c); }
   }
   inst.instanceMatrix.needsUpdate = true;
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
 }
+// 波前位置缓存（每帧复用，避免循环内分配）
+const _waveFronts = [];
 function resetWave(inst) {
   if (!inst.instanceColor) return;
-  const color = new THREE.Color(1, 1, 1);
-  for (let i = 0; i < inst.count; i++) inst.setColorAt(i, color);
+  inst.instanceColor.array.fill(1);
   inst.instanceColor.needsUpdate = true;
 }
 
@@ -1296,21 +1356,51 @@ function dirtySticks(inst) {
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
 }
 
+// ---- 实例色直写 ----
+// setColorAt 内部是 color.toArray(this.instanceColor.array, index*3)，每次调用都有一次
+// 方法调用 + Color→数组拷贝；8870 支棒逐帧全量刷时实测 0.17ms，直写数组只要 0.017ms。
+// 这里统一走直写，并且顺带保证 instanceColor 存在（three 只要看到 instanceColor 非空
+// 就会定义 USE_INSTANCING_COLOR，shader 里的 #ifdef 分支才会生效）。
+function ensureInstanceColor(inst) {
+  if (!inst.instanceColor) {
+    inst.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(inst.count * 3).fill(1), 3,
+    );
+  }
+  return inst.instanceColor.array;
+}
+
+// 单支棒写色（r/g/b 线性 HDR，可 >1）
+function writeStickColor(inst, idx, r, g, b) {
+  const arr = inst.instanceColor ? inst.instanceColor.array : ensureInstanceColor(inst);
+  const o = idx * 3;
+  arr[o] = r; arr[o + 1] = g; arr[o + 2] = b;
+}
+
 // 潮汐人浪：亮度+物理高度沿环向角传播（深海→浪峰渐变），波峰数/速度由参数表驱动
-const _tideDeep = new THREE.Color(), _tideFoam = new THREE.Color(), _tideCol = new THREE.Color();
+const _tideDeep = new THREE.Color(), _tideFoam = new THREE.Color();
 function applyTideEntries(entries, elapsed) {
   if (!entries || !entries.length) return;
   const T = DATA.concert.audience.tide;
   _tideDeep.set(T.deep); _tideFoam.set(T.foam);
-  for (const e of entries) {
-    const w = 0.5 + 0.5 * Math.sin(e.theta * T.angleWaves - elapsed * T.speed);
-    const swell = (w - 0.5) * 2; // -1..1 潮位
-    _tideCol.copy(_tideDeep).lerp(_tideFoam, Math.pow(w, 1.5));
-    _tideCol.multiplyScalar(0.2 + 1.7 * w); // 浪峰 HDR 提亮
-    e.mesh.setColorAt(e.idx, _tideCol);
+  const dr = _tideDeep.r, dg = _tideDeep.g, db = _tideDeep.b;
+  const fr = _tideFoam.r, fg = _tideFoam.g, fb = _tideFoam.b;
+  const angW = T.angleWaves, spd = T.speed, bob = T.bobAmp;
+  for (let n = 0, len = entries.length; n < len; n++) {
+    const e = entries[n];
+    const w = 0.5 + 0.5 * Math.sin(e.theta * angW - elapsed * spd);
+    const m = w * Math.sqrt(w);   // w^1.5
+    const k = 0.2 + 1.7 * w;      // 浪峰 HDR 提亮
+    writeStickColor(e.mesh, e.idx,
+      (dr + (fr - dr) * m) * k,
+      (dg + (fg - dg) * m) * k,
+      (db + (fb - db) * m) * k);
     const sw = e.mesh.userData.sway;
-    if (sw) e.mesh.instanceMatrix.array[e.idx * 16 + 13] =
-      sw.base[e.idx * 16 + 13] + swell * T.bobAmp * sw.sw[e.idx * 4 + 3];
+    if (sw) {
+      const swell = (w - 0.5) * 2; // -1..1 潮位
+      e.mesh.instanceMatrix.array[e.idx * 16 + 13] =
+        sw.base[e.idx * 16 + 13] + swell * bob * sw.sw[e.idx * 8 + 6];
+    }
   }
 }
 
@@ -1319,20 +1409,18 @@ function applyTideEntries(entries, elapsed) {
 function applyPixelEntries(entries, name, shift) {
   if (!entries || !entries.length) return;
   const P = DATA.concert.crowd.pixel;
-  const col = new THREE.Color();
-  for (const e of entries) {
+  for (let n = 0, len = entries.length; n < len; n++) {
+    const e = entries[n];
     const v = pixelStateAt(e.row, e.col, shift, name);
-    if (v === 2) col.setRGB(0.92 * 2.6, 0.97 * 2.7, 1.0 * 2.8); // HDR 超亮：远距离也能被 Bloom 拾取
-    else if (v === 1) col.setScalar(P.edge);
-    else col.setScalar(P.dim);
-    e.mesh.setColorAt(e.idx, col);
+    if (v === 2) writeStickColor(e.mesh, e.idx, 0.92 * 2.6, 0.97 * 2.7, 1.0 * 2.8); // HDR 超亮：远距离也能被 Bloom 拾取
+    else if (v === 1) { const c = P.edge; writeStickColor(e.mesh, e.idx, c, c, c); }
+    else { const c = P.dim; writeStickColor(e.mesh, e.idx, c, c, c); }
   }
 }
 
 // ---- 人浪光效（条纹 / 相遇 / 追逐）：算法在 js/wavefx.js，这里只负责写色+写摇摆 ----
 // 亮度标量 → HDR 颜色（>1 会被 Bloom 拾取）；同时按亮度给出轻微的摇摆增幅，
 // 让「被点亮」的观众有站起来的感觉，而不只是变色。
-const _fxCol = new THREE.Color();
 // 悬空小方片（700 片）每帧复用的临时矩阵/四元数——提到模块级，避免逐帧分配触发 GC 抖动
 const _flakeM = new THREE.Matrix4(), _flakeQ = new THREE.Quaternion(), _flakeE = new THREE.Euler();
 const _flakeV = new THREE.Vector3(), _flakeSV = new THREE.Vector3(1, 1, 1);
@@ -1346,23 +1434,25 @@ function applyWaveFxEntries(entries, mode, elapsed, W) {
   const t = elapsed * W.timeScale;
   // 暗区是否完全静止（灭灯型模式：亮区抬身、暗区坐定）
   const darkOut = DARKOUT_MODES.includes(mode);
-  for (const e of entries) {
+  const g = swingAt(elapsed, 1.0);
+  const s1 = g.s1, c1 = g.c1, s2 = g.s2, c2 = g.c2, s3 = g.s3, c3 = g.c3;
+  for (let n = 0, len = entries.length; n < len; n++) {
+    const e = entries[n];
     const b = fxAt(mode, e.u, e.s, t, W);
     if (b === null) continue;
-    const k = (b - lo) / span;              // 0..1（可略超 1，HDR）
+    const k = (b - lo) / span;               // 0..1（可略超 1，HDR）
     const v = b;                             // 直接给亮度：暗部为 0 时即彻底灭灯
-    _fxCol.setRGB(v * 0.92, v * 0.97, v);
-    e.mesh.setColorAt(e.idx, _fxCol);
+    writeStickColor(e.mesh, e.idx, v * 0.92, v * 0.97, v);
     // 摇摆增幅：亮区抬得更高；灭灯型模式的暗区几乎不动（坐着）
     const amp = darkOut ? 0.10 + 1.80 * k : 1 + 0.9 * k;
     const sw = e.mesh.userData.sway;
     if (sw) {
-      const i = e.idx;
+      const i = e.idx, o = i * 8, bb = i * 16;
       const arr = e.mesh.instanceMatrix.array;
-      const px = sw.sw[i * 4], pz = sw.sw[i * 4 + 1], py = sw.sw[i * 4 + 2], a = sw.sw[i * 4 + 3] * amp;
-      arr[i * 16 + 12] = sw.base[i * 16 + 12] + Math.sin(elapsed * 1.5 + px) * 0.05 * a;
-      arr[i * 16 + 13] = sw.base[i * 16 + 13] + Math.sin(elapsed * 2.2 + py) * 0.025 * a;
-      arr[i * 16 + 14] = sw.base[i * 16 + 14] + Math.cos(elapsed * 1.25 + pz) * 0.05 * a;
+      const a = sw.sw[o + 6] * amp;
+      arr[bb + 12] = sw.base[bb + 12] + (s1 * sw.sw[o + 1] + c1 * sw.sw[o]) * 0.05 * a;
+      arr[bb + 13] = sw.base[bb + 13] + (s2 * sw.sw[o + 3] + c2 * sw.sw[o + 2]) * 0.025 * a;
+      arr[bb + 14] = sw.base[bb + 14] + (c3 * sw.sw[o + 5] - s3 * sw.sw[o + 4]) * 0.05 * a;
     }
   }
 }
@@ -1402,7 +1492,10 @@ function applyLightShowEntries(entries, R, elapsed) {
   const TAU = Math.PI * 2;
   // 常态基准（权重要交还时插值回去）：蓝白 tint × 启动呼吸
   const basePulse = 0.85 + 0.15 * Math.sin(elapsed * DATA.concert.audience.pulseSpeed);
-  for (const e of entries) {
+  const g = swingAt(elapsed, 1.0);
+  const s1 = g.s1, c1 = g.c1, s2 = g.s2, c2 = g.c2, s3 = g.s3, c3 = g.c3;
+  for (let n = 0, len = entries.length; n < len; n++) {
+    const e = entries[n];
     // 每区一个固定相位（乘上一个非整数倍率，避免所有区整齐划一）
     let fk = 1;
     if (flick > 0) {
@@ -1440,12 +1533,12 @@ function applyLightShowEntries(entries, R, elapsed) {
     const amp = (0.25 + 1.5 * kk) * (1 - 0.7 * (1 - w));
     const sw = e.mesh.userData.sway;
     if (sw) {
-      const i = e.idx;
+      const i = e.idx, o = i * 8, bb = i * 16;
       const arr = e.mesh.instanceMatrix.array;
-      const px = sw.sw[i * 4], pz = sw.sw[i * 4 + 1], py = sw.sw[i * 4 + 2], a = sw.sw[i * 4 + 3] * amp;
-      arr[i * 16 + 12] = sw.base[i * 16 + 12] + Math.sin(elapsed * 1.5 + px) * 0.05 * a;
-      arr[i * 16 + 13] = sw.base[i * 16 + 13] + Math.sin(elapsed * 2.2 + py) * 0.025 * a;
-      arr[i * 16 + 14] = sw.base[i * 16 + 14] + Math.cos(elapsed * 1.25 + pz) * 0.05 * a;
+      const a = sw.sw[o + 6] * amp;
+      arr[bb + 12] = sw.base[bb + 12] + (s1 * sw.sw[o + 1] + c1 * sw.sw[o]) * 0.05 * a;
+      arr[bb + 13] = sw.base[bb + 13] + (s2 * sw.sw[o + 3] + c2 * sw.sw[o + 2]) * 0.025 * a;
+      arr[bb + 14] = sw.base[bb + 14] + (c3 * sw.sw[o + 5] - s3 * sw.sw[o + 4]) * 0.05 * a;
     }
   }
 }
@@ -1803,6 +1896,7 @@ export function buildCrowd(gltfs) {
       inst.setMatrixAt(i, Pm);
     });
     inst.instanceMatrix.needsUpdate = true;
+    ensureInstanceColor(inst); // 同看台：一开始就带实例色，shader 固定走 USE_INSTANCING_COLOR
     captureSway(inst);
     g.add(inst);
     return inst;
@@ -1822,7 +1916,14 @@ export function buildCrowd(gltfs) {
     u: PG.cols === 1 ? 0.5 : sp.col / (PG.cols - 1),
     s: PG.cols === 1 ? 1 : Math.min(1, Math.min(sp.col, PG.cols - 1 - sp.col) / ((PG.cols - 1) / 2)),
   }));
-  g.userData.pixelEntries = [...mkEntries(pitCyl, pitCylSpots), ...mkEntries(pitClaw, pitClawSpots)];
+  // 每支棒一份 entries；顺带按 InstancedMesh 分好组挂在 userData 上 —— updateCrowd 每帧
+  // 都要按 mesh 取子集，早先写成 `entries.filter(e => e.mesh === child)`，等于每帧分配
+  // 两个新数组（1550 条）触发 GC 抖动。这里一次性切好，运行时零分配。
+  const cylEntries = mkEntries(pitCyl, pitCylSpots);
+  const clawEntries = mkEntries(pitClaw, pitClawSpots);
+  pitCyl.userData.entries = cylEntries;
+  pitClaw.userData.entries = clawEntries;
+  g.userData.pixelEntries = [...cylEntries, ...clawEntries];
   g.userData.pixelSticks = pitCylSpots.length + pitClawSpots.length;
   g.userData.pixelGrid = { cols: PG.cols, rows: PG.rows };
 
@@ -1846,16 +1947,18 @@ export function updateCrowd(group, elapsed, state) {
     if (child.name.startsWith('pit-')) {
       child.visible = on;
       if (!on) continue;
+      // 该 mesh 自己的 entries（buildCrowd 里预先切好，运行期零分配）
+      const mine = child.userData.entries || entries;
       if (isFx) {
         // 人浪光效：内场插棒按列 u / 距边距离 s 逐支上色
         if (child.userData.fxOn && child.userData.fxOn !== mode && child.userData.fxOn !== 'normal') {
           resetWave(child);
         }
-        applyWaveFxEntries(entries.filter((e) => e.mesh === child), mode, elapsed, W);
+        applyWaveFxEntries(mine, mode, elapsed, W);
         dirtySticks(child);
         child.userData.fxOn = mode;
       } else if (mode === 'tide') {
-        applyTideEntries(entries.filter((e) => e.mesh === child), elapsed);
+        applyTideEntries(mine, elapsed);
         dirtySticks(child);
         child.userData.fxOn = 'tide';
       } else if (mode === 'pixel') {
@@ -1865,7 +1968,7 @@ export function updateCrowd(group, elapsed, state) {
         const shift = state.pixelShift != null ? state.pixelShift
           : (state.pixelScroll === false ? 0
             : Math.round(AP.swayAmp * Math.sin((elapsed / AP.swayPeriod) * Math.PI * 2)));
-        applyPixelEntries(entries.filter((e) => e.mesh === child), state.pixelPattern || 'heart', shift);
+        applyPixelEntries(mine, state.pixelPattern || 'heart', shift);
         dirtySticks(child);
         applySway(child, elapsed, 0.02, 0.010, 0.02);
         child.userData.fxOn = 'pixel';
