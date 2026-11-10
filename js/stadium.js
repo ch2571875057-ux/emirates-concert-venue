@@ -9,8 +9,7 @@ import { DATA } from './data.js';
 import { STAND_PROFILE } from './standProfile.js';
 import { pitGrid, pixelStateAt } from './pixel.js';
 import { fxAt, fxRange, wrap01, wrapPm } from './wavefx.js';
-import { lightShowAt } from './lightshow.js';
-import { lightShowBAt } from './lightshowb.js';
+import { lightShowFor, LS_IDS } from './lightshowRegistry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const S = DATA.stadium;
@@ -1475,9 +1474,11 @@ function applyPixelEntries(entries, name, shift) {
 // 悬空小方片（700 片）每帧复用的临时矩阵/四元数——提到模块级，避免逐帧分配触发 GC 抖动
 const _flakeM = new THREE.Matrix4(), _flakeQ = new THREE.Quaternion(), _flakeE = new THREE.Euler();
 const _flakeV = new THREE.Vector3(), _flakeSV = new THREE.Vector3(1, 1, 1);
-// meet/chase 是「灭灯型」光效：没被光效扫到的观众要彻底熄灭，只剩被点亮的区段。
-// 这类模式的暗区不仅不给颜色，也不该再大幅摇摆（观众是坐着的）。
-const DARKOUT_MODES = ['meet', 'chase'];
+// 光效模式表来自 DATA.concert.waveFx.modes（单一真相）：
+// WAVE_FX_MODES = 所有可由 fxAt 计算的光效 id；
+// DARKOUT_MODES = 其中的「灭灯型」——没被扫到的观众彻底熄灭，暗区也不大幅摇摆（人是坐着的）。
+const WAVE_FX_MODES = DATA.concert.waveFx.modes.map((m) => m.id);
+const DARKOUT_MODES = DATA.concert.waveFx.modes.filter((m) => m.dark).map((m) => m.id);
 function applyWaveFxEntries(entries, mode, elapsed, W) {
   if (!entries || !entries.length) return;
   const [lo, hi] = fxRange(mode, W);
@@ -1508,13 +1509,9 @@ function applyWaveFxEntries(entries, mode, elapsed, W) {
   }
 }
 
-// 人浪光效模式（与环境/开场秀模式并列，可被 HUD 或 show 直接设到 audienceMode）
-const WAVE_FX_MODES = ['stripe', 'meet', 'chase'];
-
 // ---- 灯光秀 A · 看台应援棒层 ----
 // 两层叠加：整片底光（gain，可到 HDR）+ 一条绕场行进的高亮带（bandU/bandW）。
 // white 控制冷青 → 纯白的过渡（素材里爆发和白带阶段是纯白，呼吸/黑场是冷青）。
-const _lsCol = new THREE.Color();
 // 观众区的冷蓝色度（素材 B 段实测 B/R 1.6~1.8、sat 36~45）。
 // 注意这里存的是**归一化色度**（B 恒为 1），再乘亮度 v —— 直接对颜色做 lerp
 // 会把暗底光提亮，看起来像整片发白而不是变蓝。
@@ -1522,6 +1519,21 @@ const _lsCol = new THREE.Color();
 // sat≈45，与素材吻合（更低的 R 会让出图过饱和到 B/R 2.4+）。
 const _LS_BLUE_R = 0.72;
 const _LS_BLUE_G = 0.79;
+
+// 正弦查表：新增的环流/径向通道每帧要算 8870 个相位，逐实例 Math.sin 会重演
+// 「实例写色性能」那次的坑（当时 26610 次三角函数 = 0.44ms/帧）。
+// 256 点够用：这些通道的相位步长都远大于 1/256，插值误差看不出来。
+const SINE_LUT_N = 256;
+const SINE_LUT = new Float32Array(SINE_LUT_N + 1);
+for (let i = 0; i <= SINE_LUT_N; i++) SINE_LUT[i] = Math.sin((i / SINE_LUT_N) * Math.PI * 2);
+/** sin(2π·ph)，ph 为任意实数（自动折回 [0,1)） */
+function sin01(ph) {
+  let f = ph - Math.floor(ph);
+  const x = f * SINE_LUT_N;
+  const i = x | 0;
+  const frac = x - i;
+  return SINE_LUT[i] + (SINE_LUT[i + 1] - SINE_LUT[i]) * frac;
+}
 function applyLightShowEntries(entries, R, elapsed) {
   if (!entries || !entries.length) return;
   const S = R.sticks;
@@ -1541,6 +1553,16 @@ function applyLightShowEntries(entries, R, elapsed) {
   const flick = S.flicker != null ? S.flicker : 0;
   const flickHz = S.flickerHz != null ? S.flickerHz : 0.7;
   const TAU = Math.PI * 2;
+  // 三条新通道（缺省 0 → 乘性调制完全不起作用，A/B 逐位不变）
+  const ringN = S.ringN != null ? S.ringN : 0;
+  const ringT = S.ringT != null ? S.ringT : 0;
+  const ringAmp = S.ringAmp != null ? S.ringAmp : 0;
+  const radN = S.radN != null ? S.radN : 0;
+  const radT = S.radT != null ? S.radT : 0;
+  const radAmp = S.radAmp != null ? S.radAmp : 0;
+  const beatAmp = S.beatAmp != null ? S.beatAmp : 0;
+  const beatEnv = S.beatEnv != null ? S.beatEnv : 0;
+  const warm = S.warm != null ? S.warm : 0;
   // 常态基准（权重要交还时插值回去）：蓝白 tint × 启动呼吸
   const basePulse = 0.85 + 0.15 * Math.sin(elapsed * DATA.concert.audience.pulseSpeed);
   const g = swingAt(elapsed, 1.0);
@@ -1567,18 +1589,30 @@ function applyLightShowEntries(entries, R, elapsed) {
       const band = S.bandFloor + (1 - S.bandFloor) * Math.pow(k, 1.4);
       v *= band * (1 / Math.max(1e-4, S.bandFloor + (1 - S.bandFloor) * 0.5));
     }
+    // 环流 / 径向 / 心跳三条可选通道（C/D/E 用，A/B 的 sticks 里没有这些键 → 全部跳过）。
+    // 都是「乘性调制」，不改底光 gain0，所以和 focus/band 可以叠加。
+    if (ringAmp > 0) v *= 1 + ringAmp * sin01(e.u * ringN + ringT);
+    if (radAmp > 0) v *= 1 + radAmp * sin01(e.s * radN - radT);
+    if (beatAmp > 0) v *= 1 + beatAmp * beatEnv;
+    if (v < 0) v = 0;
     // 权重不足 1（收尾段）时朝常态值插值：常态是 instanceColor=(1,1,1)，
     // 这样 w→0 交还控制权的那一刻不会有亮度台阶。
     if (w < 1) v = v * w + (1 - w);
     // white: 0 → 冷青(0.92/0.97/1)，1 → 纯白；blue: 再往深蓝推（B 的观众段）
     // 蓝只压 R/G、不动 B —— 对整色 lerp 会把暗底光一起提亮，变成"发白"而不是"发蓝"
-    _lsCol.setRGB(v * (0.92 + 0.08 * white), v * (0.97 + 0.03 * white), v);
-    if (blue > 0) {
-      const t = Math.min(1, blue * w);
-      _lsCol.r *= 1 - t * (1 - _LS_BLUE_R);
-      _lsCol.g *= 1 - t * (1 - _LS_BLUE_G);
+    let r = v * (0.92 + 0.08 * white);
+    let gg = v * (0.97 + 0.03 * white);
+    if (warm > 0) {          // 暖色：抬 R/G、压 B（心跳变体的暖拍用）
+      r *= 1 + 0.30 * warm;
+      gg *= 1 + 0.06 * warm;
+      v *= 1 - 0.34 * warm;
     }
-    e.mesh.setColorAt(e.idx, _lsCol);
+    if (blue > 0) {
+      const bt = Math.min(1, blue * w);
+      r *= 1 - bt * (1 - _LS_BLUE_R);
+      gg *= 1 - bt * (1 - _LS_BLUE_G);
+    }
+    writeStickColor(e.mesh, e.idx, r, gg, v);
     // 亮区抬身、暗区坐定：亮度越高摇摆越大
     const kk = Math.min(1, Math.max(0, v / 1.6));
     const amp = (0.25 + 1.5 * kk) * (1 - 0.7 * (1 - w));
@@ -1666,8 +1700,8 @@ export function updateLightShowRibbon(mesh, R, elapsed) {
 export function lightShowOf(state, elapsed) {
   if (!state || !state.lightShow) return null;
   const t = state.lightShowT != null ? state.lightShowT : elapsed;
-  if (state.lightShowVariant === 'b') return lightShowBAt(t, DATA.concert.lightShowB);
-  return lightShowAt(t, DATA.concert.lightShow);
+  // 变体分派交给 registry（未知 id 自动回落默认变体，不抛错）
+  return lightShowFor(state.lightShowVariant, t);
 }
 
 // ---- 灯光秀 B · 舞台 LED 大屏（居中光团本体）----

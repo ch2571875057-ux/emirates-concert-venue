@@ -35,7 +35,7 @@ node server_nocache.mjs  # 没 Python 走这个
 
 ## 看什么 / 怎么玩
 
-- **侧边栏**：全高手风琴分组侧边栏（🎥视角 / 💡灯光 / 👥观众 / 🌊人浪 / 🎤歌手 / 🎆开场秀 / 🎮漫游），
+- **侧边栏**：全高手风琴分组侧边栏（🎥视角 / 💡灯光 / 👥观众 / 🌊人浪 / 🎤歌手 / 🎆开场秀 / ✨灯光秀 / 🎮漫游），
   点击组头展开收起；可整体收起成 48px 图标轨（点图标直达分组）；底部状态栏实时显示
   视角名 · 时间 · FPS · draw calls；`?sb=collapsed` 初始收起，≤640px 小屏自动收起
 - **歌单（右侧）**：固定曲目单 —— 继续给十五岁的自己 / 树读 / 疑疑疑 / 如期 / 生长（王俊凯）。
@@ -57,13 +57,13 @@ node server_nocache.mjs  # 没 Python 走这个
 &still=1                 # 定帧模式（headless 截图用）
 &layers=bowl,ground,...  # 逐层显影（bowl/ground/concert-field/stage/sound/
                          #  stage-lights/audience/led-ribbon/sky）
-&fx=normal|tide|pixel|stripe|meet|chase   # 直接指定观众光效
+&fx=normal|tide|pixel|stripe|meet|chase|ripple|spiral|duet   # 直接指定观众光效
 &pattern=heart|note|smiley|star|text      # 点阵图案（会连带把模式设为 pixel）
 &scroll=0                                # 冻结点阵横向摆动；&pshift=N 冻结到指定列偏移
 &pixdump=heart            # 把内场真实 instanceColor 的 50×31 三态 ASCII 打到 #loading-error
-&fxdump=stripe|meet|chase # 把看台 48 桶 / 内场 50 桶的平均亮度剖面打到 #loading-error
+&fxdump=stripe|meet|chase|ripple|spiral|duet  # 把看台 48 桶 / 内场 50 桶的平均亮度剖面打到 #loading-error
 &lightshow=1             # 直接开启灯光秀 A（全环，循环播放）
-&lightshow=b             # 直接开启灯光秀 B（舞台中央光团，循环播放）
+&lightshow=b|c|d|e       # 直接开启灯光秀 B 深蓝 / C 环流 / D 心跳 / E 极光（循环播放）
 &lsT=秒                  # 冻结灯光秀到指定时刻；&lsT=off 验证关闭后的归位
 &lsdump=秒|off            # 把灯光秀各载体的真实数值（环带/屏 uniform、光束 alpha、看台 48 桶）打到 #loading-error
 &song=1..5               # 直接选中第 N 首（同步写到舞台副屏），配 &ui=0&view=stagefront 截图验收
@@ -100,8 +100,9 @@ msedge --headless=new --enable-unsafe-swiftshader \
 - **光束 v2**：双层锥 ShaderMaterial（轴心亮 + 外壁保底 + 长度耗散 + 尘埃流动噪声），
   偶数束外扫、奇数束斜指内场，扫描/频闪模式实时摆场；地面光池 + 全场尘埃粒子。
 
-- **灯光秀（复刻两段参考素材，A / B 两个版本）**：HUD「灯光秀」分组 ✨ 里先选**版本**
-  （A / B），再开「播放灯光秀」循环播放；开关与版本切换都会把编舞时间归零。
+- **灯光秀（五套编舞，A / B / C / D / E）**：HUD「灯光秀」分组 ✨ 里先选**版本**
+  （A 呼吸 / B 深蓝 / C 环流 / D 心跳 / E 极光），再开「播放灯光秀」循环播放；
+  开关与版本切换都会把编舞时间归零。五套都返回同一份契约，消费端零分支。
 
   **A —— 全环应援棒 + 屋顶环带 + 舞台光束三载体联动，11.35 s 六段**。时间占比按素材
   12.17 s 的真实节奏铺排：**呼吸 3.2 s**（看台北弧居中一团暗青微光缓慢起伏）→
@@ -119,17 +120,46 @@ msedge --headless=new --enable-unsafe-swiftshader \
   再叠 `tint`（0 纯白 → 1 深蓝）与沿 `uv.x` 的竖条明暗，并用 `emissiveIntensity` 做亮度包络
   （HDR 3.2 交给 Bloom 撑出光团半径），几何缩放只 ±6%（放大会露出屏框，像镜头推进）。
 
-  两版共用的机制：编舞每段返回 `w=1`，只有收尾段收到 0，消费端一律
+  **C —— 环流，12.60 s 六段**：应援棒层第一次引入**环向/径向正弦通道**（`ringN/ringT/
+  ringAmp` 与 `radN/radT/radAmp`），亮度按 `1 + amp*sin(环向角*N + 相位)` 调制，于是整圈
+  看台上跑的是**连续的三条亮度环带**而不是一颗亮头：起势 0.6 s（权重淡入，环带几乎静止）→
+  环流 6.2 s（相位匀速推进，三条环带绕场回旋，环带沿半径方向被 `radN=2` 轻微掰弯）→
+  分束 1.8 s（环距拉开、对比加深，环带像被撕成亮弧）→ 收拢 1.6 s（相位加速、弧段归拢到
+  背台侧）→ 爆亮 1.6 s（gain 到 2.2，环带与环带之间也被填亮，环带 7.6 倍）→ 回落 0.8 s。
+  C 的 LED 屏同步走冷青 `tint=0.55` + 竖纹，几何不缩放（只靠 HDR→Bloom 撑面积）。
+
+  **D —— 心跳，11.00 s 五段**：唯一一套**暖色 + 全场同步**的编舞。拍点用纯算术包络
+  `beatShape(ph, rise, decayPow, floor)`（不查表、不调 `Math.sin`），`bpm=96` 一拍约
+  0.625 s：起势 0.8 s → 拍点 4.8 s（每拍全场应援棒同时抬起再衰减，剖面几乎均匀，
+  是「观众被同一拍子推起来」的观感）→ 加倍 2.0 s（拍频翻倍、`beatAmp` 抬到 0.95）→
+  悬停 1.8 s（拍点收成持续底光）→ 回落 1.6 s。`warm=0.55` 把颜色往暖白推
+  （`r*1.16`、`g*1.03`、`b*0.81`），是五套里唯一的暖色场。
+
+  **E —— 极光，14.40 s 五段**：环向 + 径向两路**极慢**正弦（`ringSpeed=0.11`、
+  `radSpeed=0.07`），叠在一起形成缓慢游走的宽色带。关键在**折返**——环向相位不是
+  线性累加，而是一个 C1 连续的全局函数：先按 `ringSpeed` 正向推，进入 fold 段后用
+  `(Tf/π)*sin(π*p)` 让速度平滑过零再反向，净位移为 0，所以色带会**走过去再走回来**，
+  不会在循环边界硬切向。渗透 2.0 s → 漂流 5.0 s → 折返 3.0 s → 爆亮 1.4 s（`flareGain=2.4`，
+  环带 8.4 倍）→ 回落 3.0 s。E 是五套里最长、最暗、最慢的一套，专门用来做「安静段」。
+
+  五套共用的机制：编舞每段返回 `w=1`，只有收尾段收到 0，消费端一律
   常态值*(1-w) + 编舞值*w，所以开关、切版本、收尾都不会跳变；环带层必须在
   `updateAtmosphere` **之后**覆写（那里每帧都写 `emissiveIntensity`），并以
   `userData.lsBaseIntensity` 为基准插值；环带着色、屏着色与光束颜色**每帧无条件写回**
   （即使灯光秀关闭），否则会停在纯白/分段/深蓝状态。变体分派集中在
-  `stadium.js` 的 `lightShowOf(state, elapsed)`，A/B 返回同一套顶层契约
-  `{ w, sticks, ribbon, beam }`（B 额外带 `body` 与 `beam.blue`），所以
-  `updateLights / updateAudience / updateLightShowRibbon / updateLightShowBody` 都不用分支。
-  编舞数学独立在 `js/lightshow.js` / `js/lightshowb.js`（纯函数无 three 依赖），参数在
-  `js/data.js` 的 `concert.lightShow` / `concert.lightShowB`；
-  `?lightshow=1`（A）或 `?lightshow=b`（B）直接开启，`?lsT=秒` 定格任意时刻，
+  `stadium.js` 的 `lightShowOf(state, elapsed)` → `lightshowRegistry.js`。五套返回同一套
+  顶层契约 `{ phase, name, p, t, total, w, sticks, ribbon, beam }`，其中 B/C/D/E 额外带
+  `body`（LED 屏）与 `sticks.blue`/`beam.blue`；`sticks` 除 8 个必填字段外，
+  C/D/E 还带可选的 `ringN/ringT/ringAmp/radN/radT/radAmp/beatAmp/beatEnv/warm`。
+  消费端四条通道全部分支为零：`updateLights` 读 `beam`、`updateLightShowRibbon` 读
+  `ribbon`、`updateAudience` 读 `sticks`、`updateLightShowBody` 读 `body`（用 body 是否存在
+  判定权重，否则 A 会把屏压蓝）。
+  编舞数学独立在 `js/lightshow.js` / `lightshowb.js` / `lightshowc.js` / `lightshowd.js` /
+  `lightshowe.js`（纯函数无 three 依赖），参数在 `js/data.js` 的 `concert.lightShow` /
+  `lightShowB` / `lightShowC` / `lightShowD` / `lightShowE`。变体表集中在
+  `js/lightshowRegistry.js`（id / 中文名 / 一句话描述 / 参数键 / 编舞函数 / 总时长），
+  新增一套只需往这张表加一行 + 一个纯函数文件，`stadium.js` 与 `app.js` 一行都不用改。
+  `?lightshow=1|b|c|d|e` 直接开启，`?lsT=秒` 定格任意时刻，
   `?lsdump=秒|off` 把所有载体的真实数值打到 `#loading-error`。
 
   **B 的观众层**复刻参考素材里看台的行为（0~2.5s 完全不亮 → t≈3.07s 与屏同刻
@@ -156,9 +186,13 @@ js/show.js      开场秀：ShowManager 时间轴状态机 + Fireworks 星芒烟
                 （星形 SDF 粒子/长芒/闪光/池化 PointLight/上升彗星）
 js/data.js      参数总表（全部实测/调校常量，几何代码零魔法数字）
 js/pixel.js     点阵屏编址与图案（内场 50×31 平面网格，纯逻辑无 three 依赖）
-js/wavefx.js    人浪光效数学（条纹/相遇/追逐，纯函数无 three 依赖）
-js/lightshow.js 灯光秀 A 编舞（全环 + 环带 + 光束，六段式曲线，纯函数无 three 依赖）
-js/lightshowb.js 灯光秀 B 编舞（舞台中央单光团，六段式曲线，纯函数无 three 依赖）
+js/wavefx.js    人浪光效数学（条纹/相遇/追逐/涟漪/螺旋/对撞，纯函数无 three 依赖）
+js/lightshow.js 灯光秀 A 呼吸（全环 + 环带 + 光束，六段式曲线，纯函数无 three 依赖）
+js/lightshowb.js 灯光秀 B 深蓝（舞台中央单光团，六段式曲线，纯函数无 three 依赖）
+js/lightshowc.js 灯光秀 C 环流（环向/径向正弦通道，六段式曲线）
+js/lightshowd.js 灯光秀 D 心跳（拍点包络 + 暖色，五段式曲线）
+js/lightshowe.js 灯光秀 E 极光（双路慢波 + 折返，五段式曲线）
+js/lightshowRegistry.js 灯光秀变体表（id/名称/描述/参数键/编舞函数/时长，单一真相）
 js/standProfile.js  24 扇区看台坡面剖面（tools/measure_stands.mjs 生成，勿手改）
 tools/measure_stands.mjs  看台剖面测量工具（只读 Arsenal.glb，可复现）
 assets/         Arsenal.glb（2.4 MB）+ crowd_a/b.glb（人模 0.06/0.18 MB）
@@ -169,10 +203,15 @@ vendor/         three@0.169.0 本地副本（MIT）
 ### 子目录约定
 
 ```
-tools/           正式工具链（11 个）
+tools/           正式工具链（15 个）
   measure_stands.mjs       看台剖面测量（生成 standProfile.js）
   export_sticks.mjs        点阵编址导出
-  verify_*.mjs             光效/点阵/灯光秀离线断言
+  verify_wavefx.mjs        人浪 6 档离线断言（形状/方向/周期/边界 + 与 modes 表交叉校验）
+  verify_lightshow_variants.mjs  灯光秀 5 变体同契约断言（全时段无 NaN / 字段齐全 / 互不相同）
+  verify_lightshow_seam.mjs      灯光秀循环接缝断言（防 A/B 历史上 1.000→0.180 的突跳）
+  verify_lightshowb.mjs    灯光秀 B 编舞断言（六段全覆盖 / 色温单调 / 观众暗态）
+  verify_pixel_layout.mjs  点阵编址与图案断言
+  verify_pixel_sway.mjs    点阵横摆幅度断言（≤2% 屏宽）
   pixel_*.py stick_bbox.py 点阵 ASCII 与统计
   _check_self.py           三角形级射线可见性检查（README 验收用）
   _penet_final.py          摆动全程穿模检查（README 验收用）
@@ -223,7 +262,8 @@ render/          5 张 1920×1080 最终交付图
   呼吸摇摆与潮汐/波浪模式。
   编址与图案逻辑独立在 `js/pixel.js`，可用 `node tools/verify_pixel_layout.mjs` 离线校验
 - **人浪光效（HUD 新分栏 🌊 人浪）**：观众光效拆成两组——👥观众管「星海 / 点阵屏 /
-  内场图案」，🌊人浪管「常规 / 潮汐 / 条纹 / 相遇 / 追逐」五个动态光效。算法全部是
+  内场图案」，🌊人浪管「常规 / 潮汐 / 条纹 / 相遇 / 追逐 / 涟漪 / 螺旋 / 对撞」八个动态光效
+  （三档新光效的按钮排在第二行，`.seg` 已允许换行）。算法全部是
   `js/wavefx.js` 里的纯数学函数（不 import three，返回亮度标量，可 >1 走 HDR + Bloom），
   `stadium.js` 只负责把亮度写成 instanceColor 并给亮部加摇摆增幅（被点亮的观众抬得更高）：
   - **条纹**：绕场交替的明暗竖带整体缓慢漂移（`bands` 对带宽，带边 `soft` 软化）。
@@ -241,11 +281,40 @@ render/          5 张 1920×1080 最终交付图
     相遇前沿向外用 2.5 倍 `headWidth` 的平方曲线回落到全黑，避免 2.1 的 HDR 亮边
     直接贴着纯黑出现一道像渲染接缝的硬边。追逐的尾巴末端用 `tailFloor` 抬到 6%，
     防止长尾最后一段突然掉进纯黑、看起来像被切断。
-  亮度区间由 `fxRange()` 统一给出（含 meet 的前沿/满亮峰值，避免归一化溢出把暗部压到 0）。
-  参数集中在 `js/data.js` 的 `concert.waveFx`，`timeScale` 一处改全局快慢。
-  可用 `node tools/verify_wavefx.mjs` 跑离线断言（形状/方向/周期/边界），
-  浏览器验收用 `?fxdump=stripe|meet|chase` 把看台 48 桶 / 内场 50 桶的平均亮度剖面
+  - **涟漪**：以舞台为中心的**同心环**从内场向外扩散（看台用「距舞台的归一化角距 s」，
+    内场用「距最近一侧的归一化距离」），环峰位置 `s = (k+0.5+t*speed)/rings`，往外
+    按 `1-falloff*s` 逐环衰减——内圈亮、外圈淡，像水波推上碗体。与「相遇」的区别：
+    相遇是**单向推进的一次性事件**（推完 hold 满场亮），涟漪是**持续驻波**（环不停往外走）。
+    非灭灯型（`dark=false`），暗处仍有底光，观感偏柔。
+  - **螺旋**：`phase = wrap01(u*turns + s*twist - t*speed)`，环向与径向**不绕 0 叠加**，
+    于是同相位等值线在 (u,s) 平面里是一条斜带，绕场看就是**几支旋臂在转**（`turns=2`
+    即臂数）。`sharp` 控制臂的粗细（越大越细）。判旋转方向必须**只在 `[0,1/turns)`
+    这一个臂的窗口里找峰**，否则 argmax 会在多个臂之间乱跳。
+  - **对撞**：两个亮头从 `u=0` 与 `u=0.5` 反向出发，在 `u=0.25` / `u=0.75` 处**交错对撞**
+    （`ph=0.25`，不是 0.5——两头各走 1/4 圈就相遇），交错瞬间叠 `flashGain` 闪光。
+    灭灯型（`dark=true`），只剩两个亮头，是六档里对比最强的。
+  亮度区间由 `fxRange()` 统一给出（含 meet 的前沿/满亮峰值、duet 的双头叠加峰值，
+  避免归一化溢出把暗部压到 0）。
+  参数集中在 `js/data.js` 的 `concert.waveFx`，`timeScale` 一处改全局快慢；
+  可用光效清单本身也是一处真相——`concert.waveFx.modes`（id / 中文名 / 是否灭灯型），
+  HUD 按钮、`updateAudience` 的分派表、离线断言都从它派生，新增一档只加一条。
+  可用 `node tools/verify_wavefx.mjs` 跑离线断言（形状/方向/周期/边界，六档全覆盖），
+  浏览器验收用 `?fxdump=stripe|meet|chase|ripple|spiral|duet` 把看台 48 桶 / 内场 50 桶的平均亮度剖面
   打到 `#loading-error`（直接读真实 instanceColor，不依赖截图采样）。
+- **应援棒的自发光补丁（glowPatch，两处坑都要绕）**：应援棒的发光材质靠
+  `onBeforeCompile` 把 `vec3 totalEmissiveRadiance = emissive;` 改成乘 `vColor`，
+  这样 `setColorAt` 写的 instanceColor 才能真正决定亮度。这里踩过两次坑：
+  ① **无条件替换会编译失败**——`normal` 档从不写实例色，`instanceColor` 还是 `null`，
+  three 就不会定义 `vColor`，片段着色器报 `'vColor' : undeclared identifier`，
+  整块发光材质静默失效（只进 console，不写 `#loading-error`）。
+  ② **`#ifdef USE_INSTANCING_COLOR` 在片段着色器里恒为假**——three 只在**顶点**前缀里
+  定义 `USE_INSTANCING_COLOR`，片段前缀给的是 `USE_COLOR`（`color_pars_fragment` 用
+  `#if defined(USE_COLOR_ALPHA) ... #elif defined(USE_COLOR) varying vec3 vColor;`）。
+  所以补丁必须按 `USE_COLOR_ALPHA / USE_COLOR / else` 三分支写，不能用
+  `USE_INSTANCING_COLOR`——否则编译通过但颜色被整个丢掉，**点阵/潮汐/人浪/灯光秀的
+  看台层全部静默失效**，而默认 `normal` 档完全看不出来。
+  改完用 `gl.getShaderSource(program.fragmentShader)` 复查片段里出现
+  `emissive * vColor` 才算生效。
 - **观众机位（新增）**：内场前排 / 北看台中排 / 东看台 / 西看台 / 南看台·舞台后——
   坐席眼高的固定机位，每组独立切换
 - **歌手运镜（新增）**：歌手特写 / 侧写 / 歌手背后·星海 / **歌手环绕运镜**（自动绕

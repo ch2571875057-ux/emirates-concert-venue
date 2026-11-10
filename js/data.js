@@ -368,6 +368,49 @@ export const DATA = {
         // 避免尾巴后半段整体掉进「全黑」让长尾看起来突然断掉。
         tailFloor: 0.06,    // 尾端最低亮度（相对 gain），0 = 尾巴尖完全黑
       },
+
+      // 4) 涟漪：以舞台为圆心的同心光环保向外扩散（图案主轴是径向 s，不是环向 u）
+      ripple: {
+        rings: 3.5,         // 全场同时存在的光环数（非整数 = 环缝不闭合，避免停在同一条线上）
+        speed: 0.42,        // 扩散速度（环/秒，正数 = 由舞台向外）
+        lo: 0.10,           // 环外底光
+        hi: 1.45,           // 环峰亮度（HDR）
+        falloff: 0.35,      // 远端衰减（0 = 内外一样亮，1 = 最远处完全没光）
+      },
+
+      // 5) 螺旋：光臂沿环向 + 径向同时推进，绕成螺旋（同一 u 上不同看台高度错拍）
+      spiral: {
+        turns: 2,           // 臂数（整数 = N 条对称臂）
+        twist: 1.6,         // 内外倾斜量：越大，臂在内场/看台之间的错位越明显
+        speed: 0.22,        // 旋转速度（圈/秒）
+        sharp: 3.0,         // 臂宽（越大越窄，1 = 很宽的渐变，4+ = 细亮臂）
+        lo: 0.08,
+        hi: 1.50,
+      },
+
+      // 6) 对撞：两颗亮头沿环向相向奔跑，交错瞬间全场闪一下（唯一有「相遇瞬间」的形态）
+      duet: {
+        period: 6.4,        // 交错一次的周期（秒）
+        headWidth: 0.10,    // 亮头半宽（归一化环向距离）
+        base: 0.06,         // 头外底光
+        gain: 0.85,         // 单头亮度
+        flashWidth: 0.06,   // 交错闪光的触发半宽
+        flashGain: 0.55,    // 交错时的额外闪光
+      },
+
+      // 光效模式表（单一真相）：HUD 按钮、模式分派、暗区判定全部从这里派生。
+      // 顺序 = HUD 按钮顺序；新增一档光效只需在这里加一行 + 写 xxxAt 纯函数。
+      //   id     lightState.audienceMode 的取值（也是 ?fx= 的取值）
+      //   label  HUD 按钮文案
+      //   dark   true = 灭灯型：没被光效扫到的观众彻底熄灭，且暗区几乎不摇摆
+      modes: [
+        { id: 'stripe', label: '条纹', dark: false },
+        { id: 'meet', label: '相遇', dark: true },
+        { id: 'chase', label: '追逐', dark: true },
+        { id: 'ripple', label: '涟漪', dark: false },
+        { id: 'spiral', label: '螺旋', dark: false },
+        { id: 'duet', label: '对撞', dark: true },
+      ],
     },
 
     // 灯光秀 A（三载体联动编舞：看台应援棒 + 屋顶 LED 环带 + 舞台光束阵列）
@@ -484,6 +527,116 @@ export const DATA = {
       ribbonBlue: 0.90,
     },
 
+    // 灯光秀 C「环流」：多条光环绕场旋转 + 径向条纹错拍，末段收拢成整片白光。
+    // 用到 sticks 的 ringN/ringT/ringAmp 与 radN/radT/radAmp 六个可选通道
+    // （通道缺省为 0 → 乘性调制不起作用，所以 A/B 的曲线逐位不变）。
+    lightShowC: {
+      enabled: true,
+      timeScale: 1,
+      // 六段（合计 12.6s）
+      enter: 0.6,            // 起势：条数 0→ringN，亮度缓起（w 从 0 渐入，接缝连续）
+      run: 6.2,              // 主段：光环匀速绕场，径向条纹反向慢转
+      split: 1.8,            // 分束：条数翻倍、转速加快、明暗对比拉大
+      gather: 1.6,           // 收拢：条数收回、相位归零、幅度收到很小
+      bloom: 1.6,            // 爆亮：整圈均匀满亮，光环消失
+      out: 0.8,              // 回落：亮度回常态，w 收 0
+
+      baseGain: 0.16,        // 起势底光
+      runGain: 0.92,         // 主段底光
+      splitGain: 1.35,       // 分束段底光
+      bloomGain: 2.2,        // 爆亮峰值（HDR，交给 Bloom）
+
+      ringN: 3,              // 环向光带条数
+      ringSpeed: 0.42,       // 环向相位速度（圈/秒反比：0.42 = 一圈约 2.4s）
+      ringAmp: 0.85,         // 环向调制幅度（0.85 = 亮处 1.85×、暗处 0.15×）
+      radN: 2,               // 径向条纹条数
+      radSpeed: -0.23,       // 径向相位速度（负 = 与环向反向）
+      radAmp: 0.18,          // 径向调制幅度（小一点，只做上下层的错拍感）
+
+      ribbonBase: 1.4,
+      ribbonRun: 4.2,
+      ribbonBloom: 7.6,
+      beamRun: 1.05,
+      beamBloom: 1.6,
+
+      // 舞台 LED 大屏（C 也驱动它：冷青呼吸 + 细竖纹，不做几何缩放）
+      bodyGain: 1.15,
+      bodyTint: 0.55,
+      bodyFreq: 9,
+    },
+
+    // 灯光秀 D「心跳」：全场同步拍点 + 暖白脉冲（唯一一套暖色编舞）。
+    // 拍包络 beatEnv 是纯算术（分段线性 + 幂衰减），8870 支棒每帧只乘同一个标量。
+    lightShowD: {
+      enabled: true,
+      timeScale: 1,
+      // 五段（合计 11.0s）
+      enter: 0.8,            // 起势：拍幅度从 0 涨到满
+      beat: 4.8,             // 主段：一拍一亮，拍间底光
+      double: 2.0,           // 加倍：拍频翻倍，推进感
+      hold: 1.8,             // 悬停：整场憋在半亮不动（编舞的留白）
+      out: 1.6,              // 泄掉：回常态，w 收 0
+
+      baseGain: 0.14,
+      beatGain: 1.05,        // 主段底光
+      beatAmp: 0.95,         // 拍点调制幅度
+      beatFloor: 0.10,       // 拍间最低亮度（相对峰值）
+      beatRise: 0.10,        // 起音时间（占一拍比例，越小越「脆」）
+      beatDecay: 2.6,        // 衰减指数（越大尾巴越短）
+      bpm: 96,               // 拍频
+      warm: 0.55,            // 暖色偏移（抬 R/G、压 B；0 = 冷青）
+      regionN: 8,            // 独立错拍的区域数（人群不是整齐划一）
+      regionFlicker: 0.10,
+
+      ribbonBase: 1.6,
+      ribbonBeat: 4.0,
+      beamBeat: 1.2,
+      bodyBase: 0.7,
+      bodyBeat: 1.9,
+      bodyFreq: 6,
+      bodyPulse: 0.05,       // 屏体面积随拍点的缩放幅度
+    },
+
+    // 灯光秀 E「极光」：环向 + 径向双向慢波，中段 fold 让环向相位反向（波原路折回）。
+    // 相位用整条连续函数算（sin 形折返），段边界不跳变。
+    lightShowE: {
+      enabled: true,
+      timeScale: 1,
+      // 五段（合计 14.4s）
+      seep: 2.0,             // 渗透：极慢地浮起来
+      drift: 5.0,            // 漂流：双向慢波匀速，白度缓慢来往
+      fold: 3.0,             // 折返：环向相位平滑反向，径向反向，白度推到高位
+      flare: 1.4,            // 爆亮：一次短促满亮
+      out: 3.0,              // 退去：极慢回常态，w 收 0
+
+      baseGain: 0.15,
+      driftGain: 0.78,
+      foldGain: 1.25,
+      flareGain: 2.4,
+
+      ringN: 3,              // 环向波数
+      ringSpeed: 0.11,       // 环向相位速度（很慢，极光感）
+      ringAmp: 0.62,
+      radN: 2,               // 径向波数
+      radSpeed: 0.07,
+      radAmp: 0.30,
+
+      ribbonBase: 1.3,
+      ribbonDrift: 3.4,
+      ribbonFold: 5.6,
+      ribbonFlare: 8.4,
+      beamDrift: 0.85,
+      beamFold: 1.25,
+      beamFlare: 1.7,
+      bodyBase: 0.6,
+      bodyDrift: 1.5,
+      bodyFold: 2.0,
+      bodyFlare: 2.9,
+      bodyTint: 0.62,
+      bodyFreq: 5,
+      bodyDrift: 0.03,
+    },
+
     // 灯光模式参数（光束 alpha 由 updateLights 驱动；光束本体参数在 stageV2.rings）
     lights: {
       realSpotColor: 0xfff2d8,
@@ -510,6 +663,8 @@ export const DATA = {
     pitColorB: '#39445a',            // 站区双色 B
     barrierHeight: 1.1,              // 隔离栏高度
     barrierColor: 0x9fb6d8,
+    trussColor: 0x39404e,            // 音响塔格构钢材（原先缺这个键，材质 color 拿到 undefined，
+                                     // three 会 warn 并退回纯白 —— 塔一直是白的，不是深灰钢构）
   },
 
   // ---------- 灯光 ----------

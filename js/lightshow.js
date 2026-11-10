@@ -83,6 +83,9 @@ export function lightShowAt(t, P) {
 
   if (Q.name === 'breath') {
     // 1) 呼吸：暗青，两次缓慢起伏。观众只是「被点亮」，不是全亮
+    // 循环接缝：上一轮 fall 段把 w 收到 0（交还常态），这里必须从 0 渐入回来，
+    // 否则 t 回绕到 0 的瞬间 w 从 0 跳到 1、亮度从常态值直接掉到 breath 暗光（肉眼可见的闪跳）。
+    out.w = smooth(Q.p / 0.18);
     const k = pulse(Q.p, 1.6);
     S.gain = mix(bg[0], bg[1], k);
     S.white = 0;

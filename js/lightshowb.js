@@ -91,6 +91,8 @@ export function lightShowBAt(t, P) {
 
   if (Q.name === 'ignite') {
     // 1) 起势：近白（sat 10~19），方形，缓慢涨亮
+    // 循环接缝：上一轮 fade 段把 w 收到 0，这里从 0 渐入回来（同 A 的 breath 段）
+    out.w = smooth(Q.p / 0.20);
     const k = smooth(Q.p);
     D.gain = mix(P.bodyBase, P.bodyIgnite, k) * (0.92 + 0.08 * pulse(Q.p, 1.0));
     D.tint = mix(0.05, P.igniteTint != null ? P.igniteTint : 0.15, k);

@@ -1,5 +1,5 @@
 // =====================================================================
-// wavefx.js — 人浪光效纯逻辑（条纹 / 相遇 / 追逐）
+// wavefx.js — 人浪光效纯逻辑（条纹 / 相遇 / 追逐 / 涟漪 / 螺旋 / 对撞）
 // 设计约束：只做数学、不 import three，返回「亮度标量」（可 >1 即 HDR），
 // 由 stadium.js 负责写 instanceColor / instanceMatrix。
 // 这样算法可以被 node 直接 import 做离线断言（同 js/pixel.js 的思路）。
@@ -104,11 +104,75 @@ export function chaseAt(u, t, P) {
   return b;
 }
 
+
+// ---------------------------------------------------------------------
+// 4) 涟漪 ripple —— 以舞台为圆心的同心光环保向外扩散。
+//    与前面三档的最大差别：它的图案主轴是 s（径向），不是 u（环向），
+//    所以看起来是「一圈一圈从台口推上看台」，而 stripe/meet/chase 都是绕场走。
+//    rings = 全场同时存在的环数；环峰随 s*rings - t*speed 向外推移。
+//    形状用三角峰（1-|2ph-1|）再平方收尖 —— 纯加减乘，没有三角函数。
+// ---------------------------------------------------------------------
+export function rippleAt(s, t, P) {
+  const rings = Math.max(1, P.rings);
+  const ph = wrap01(s * rings - t * P.speed);
+  let e = 1 - Math.abs(ph * 2 - 1);     // 0 → 1 → 0 的三角峰（环中心最亮）
+  e = e * e;                            // 平方收尖，环边更干净
+  const atten = 1 - (P.falloff || 0) * clamp01(s);   // 越远越弱（能量扩散损耗）
+  return P.lo + (P.hi - P.lo) * e * atten;
+}
+
+// ---------------------------------------------------------------------
+// 5) 螺旋 spiral —— 一条（或数条）光臂沿环向 + 径向同时推进，绕成螺旋。
+//    turns 是臂数（整数即是 N 条对称臂），twist 让臂在内外场之间倾斜，
+//    所以同一个 u 上、不同高度的观众被点亮的时间是错开的 —— 这是
+//    stripe（纯环向竖带）做不到的层次。
+// ---------------------------------------------------------------------
+export function spiralAt(u, s, t, P) {
+  const ph = wrap01(u * P.turns + s * P.twist - t * P.speed);
+  let e = 1 - Math.abs(ph * 2 - 1);
+  // 收成细臂（sharp 越大臂越窄）。sharp 是每实例都要用的小整数，
+  // Math.pow 在 8870 次/帧的量级上是热点，这里用平方/乘法代替（结果逐位相同）。
+  const sharp = P.sharp != null ? P.sharp : 3;
+  if (sharp === 3) e = e * e * e;
+  else if (sharp === 2) e = e * e;
+  else if (sharp === 1) { /* 原值 */ }
+  else if (sharp === 4) { const e2 = e * e; e = e2 * e2; }
+  else e = Math.pow(e, sharp);
+  return P.lo + (P.hi - P.lo) * e;
+}
+
+// ---------------------------------------------------------------------
+// 6) 对撞 duet —— 两颗亮头沿环向相向奔跑，交错时全场闪一下，再各自跑开。
+//    与 chase 的区别：chase 是单头长尾（单向），duet 是双头对开且**没有长尾**，
+//    画面读起来是「两股人浪迎头撞上」，是这一组里唯一有「相遇瞬间」的形态。
+// ---------------------------------------------------------------------
+export function duetAt(u, t, P) {
+  const period = Math.max(0.001, P.period);
+  const ph = wrap01(t / period);
+  const pa = ph;                        // 头 A 沿 u 增大方向
+  const pb = wrap01(0.5 - ph);          // 头 B 反向，起点相差半圈
+  // 环向距离直接用 [0,1) 上的「绕过边界取短边」，比 wrapPm(×(2π))/2π 少两次
+  // 乘除和一次取模 —— 同一个量在逐实例循环里被算 8870 次。
+  let dA = u - pa; if (dA < 0) dA = -dA; if (dA > 0.5) dA = 1 - dA;
+  let dB = u - pb; if (dB < 0) dB = -dB; if (dB > 0.5) dB = 1 - dB;
+  const w = Math.max(1e-4, P.headWidth);
+  const kA = dA < w ? 1 - dA / w : 0;
+  const kB = dB < w ? 1 - dB / w : 0;
+  // 两头顶在同一个 u 上的瞬间（相向交错）全场一起闪
+  let sep = pa - pb; if (sep < 0) sep = -sep; if (sep > 0.5) sep = 1 - sep;
+  const fw = Math.max(1e-4, P.flashWidth);
+  const flash = sep < fw ? 1 - sep / fw : 0;
+  return P.base + P.gain * (kA * kA + kB * kB) + (P.flashGain || 0) * flash;
+}
+
 // 按名字取亮度（stadium.js 的模式派发用；未知名字返回 null）
 export function fxAt(mode, u, s, t, W) {
   if (mode === 'stripe') return stripeAt(u, t, W.stripe);
   if (mode === 'meet') return meetAt(s, t, W.meet);
   if (mode === 'chase') return chaseAt(u, t, W.chase);
+  if (mode === 'ripple') return rippleAt(s, t, W.ripple);
+  if (mode === 'spiral') return spiralAt(u, s, t, W.spiral);
+  if (mode === 'duet') return duetAt(u, t, W.duet);
   return null;
 }
 
@@ -123,7 +187,14 @@ export function fxRange(mode, W) {
     return [P.dark, peak];
   }
   if (mode === 'chase') return [W.chase.base, W.chase.base + W.chase.gain + W.chase.headGain];
+  if (mode === 'ripple') return [W.ripple.lo, W.ripple.hi];
+  if (mode === 'spiral') return [W.spiral.lo, W.spiral.hi];
+  if (mode === 'duet') {
+    const P = W.duet;
+    // 两颗亮头同时压在同一个 u 上时才会到峰值（各自平方和 + 交错闪光）
+    return [P.base, P.base + P.gain * 2 + (P.flashGain || 0)];
+  }
   return [0, 1];
 }
 
-export const FX_MODES = ['stripe', 'meet', 'chase'];
+export const FX_MODES = ['stripe', 'meet', 'chase', 'ripple', 'spiral', 'duet'];

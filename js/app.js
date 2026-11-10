@@ -12,8 +12,10 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { DATA } from './data.js';
 import { convertGLB, updateLights, updateAudience, updateCrowd, buildCrowd, buildSinger, updateSinger, buildBand, updateBand, updateLightShowRibbon, ensureRibbonShader, updateLightShowBody, lightShowOf, paintWaveText } from './stadium.js';
 import { pitGrid } from './pixel.js';
-import { lightShowAt, lightShowDuration, lightShowPhaseAt, LS_PHASES } from './lightshow.js';
-import { lightShowBAt, lightShowBDuration, lightShowBPhaseAt, LSB_PHASES } from './lightshowb.js';
+import {
+  LS_VARIANTS, LS_BY_ID, LS_DEFAULT, lsEntry, lsParams,
+  lightShowFor, lightShowPhaseFor, lightShowDurationFor, lightShowTimeScale,
+} from './lightshowRegistry.js';
 import { ShowManager, Fireworks } from './show.js';
 
 // ---------- URL 参数 ----------
@@ -100,6 +102,12 @@ const LS_PHASE_LABEL = {
   breath: '起势', burst: '爆发', collapse: '收束', black: '暗场', band: '白带', fall: '回落',
   // B：舞台中央光团
   ignite: '点亮', flash: '闪白', cool: '转冷', blue: '深蓝', stripe: '竖纹', fade: '隐去',
+  // C：环流
+  enter: '起势', run: '环流', split: '分束', gather: '收拢', bloom: '爆亮', out: '回落',
+  // D：心跳
+  beat: '拍点', double: '加倍', hold: '悬停',
+  // E：极光
+  seep: '渗透', drift: '漂流', fold: '折返', flare: '爆亮',
 };
 const lightState = { mode: 'sweep', lampBanks: true, audienceMode: 'normal', pixelPattern: 'heart', pixelScroll: true, lightShow: false, lightShowT: 0, lightShowVariant: 'a' };
 const sceneState = { lightsOff: false };
@@ -224,7 +232,8 @@ Promise.all([
   // QA：?lightshow=1（A）或 ?lightshow=b（B）启动灯光秀；?lsT=秒 冻结到确定时刻
   if (Q.get('lightshow')) {
     const lv = Q.get('lightshow');
-    lightState.lightShowVariant = lv === 'b' ? 'b' : 'a';
+    // 任意注册变体 id 都认（?lightshow=b/c/d/e），未知 id 回落默认
+    lightState.lightShowVariant = LS_BY_ID[lv] ? lv : LS_DEFAULT;
     lightState.lightShow = true;
     const lt = parseFloat(Q.get('lsT'));
     lightState.lightShowT = isFinite(lt) ? lt : 0;
@@ -364,9 +373,9 @@ function dumpWaveFx(mode) {
 // 环带材质 emissiveIntensity、LED 大屏 emissiveIntensity + 屏体缩放、光束各束 uAlpha、
 // 以及编舞本身返回的曲线值。用途：headless dump-dom 一次拿到全部载体的量，不依赖截图采样。
 function dumpLightShow(t) {
-  const isB = lightState.lightShowVariant === 'b';
-  const P = isB ? DATA.concert.lightShowB : DATA.concert.lightShow;
-  const phaseAt = isB ? lightShowBPhaseAt : lightShowPhaseAt;
+  const variantId = lightState.lightShowVariant;
+  const entry = lsEntry(variantId);
+  const isB = !!entry.body;   // 只有带舞台光体本体的变体才打 body 行
   // ?lsdump=off → 走「未开启」路径，验证着色器 uniform 与光束颜色能否干净归位
   const off = !isFinite(t);
   const R = off ? null : lightShowOf({ lightShow: true, lightShowT: t, lightShowVariant: lightState.lightShowVariant }, t);
@@ -381,7 +390,7 @@ function dumpLightShow(t) {
   const ribState = ribbonMesh ? ensureRibbonShader(ribbonMesh) : null;
   if (stadiumGroup?.userData?.stageGroup) updateLightShowBody(stadiumGroup.userData.stageGroup, R, tt);
   if (audienceGroup) updateAudience(audienceGroup, tt, lightState);
-  const tag = isB ? 'lsdumpB' : 'lsdump';
+  const tag = `lsdump${variantId === 'a' ? '' : variantId.toUpperCase()}`;
   const lines = [off
     ? `[${tag}] mode=off（未开启灯光秀，验证归位）`
     : `[${tag}] t=${t.toFixed(2)}/${R.total.toFixed(2)} phase=${R.name} p=${R.p.toFixed(3)} w=${R.w.toFixed(3)}`];
@@ -670,8 +679,12 @@ let currentViewName = '鸟瞰全景';
 let currentViewId = 'aerial';
 let orbitAngle = 0;
 let statFrames = 0;
-// 人浪分栏的光效按钮（常规放在人浪里，与潮汐/条纹/相遇/追逐并列）
-const WAVE_FX_BTNS = [['normal', '常规'], ['tide', '潮汐'], ['stripe', '条纹'], ['meet', '相遇'], ['chase', '追逐']];
+// 人浪分栏的光效按钮：常规/潮汐是高亮型内置档，其余光效全部来自
+// DATA.concert.waveFx.modes（单一真相），新增光效不必再改这里。
+const WAVE_FX_BTNS = [
+  ['normal', '常规'], ['tide', '潮汐'],
+  ...DATA.concert.waveFx.modes.map((m) => [m.id, m.label]),
+];
 // 特效按钮注册表：fxEls[audienceMode] = [button, ...]，任何入口（HUD 按钮 / URL 参数 / 开场秀）
 // 改 lightState.audienceMode 后调 syncFx 即可让所有分栏的按钮状态保持一致。
 const fxEls = {};
@@ -958,23 +971,24 @@ function buildHUD() {
   // 灯光秀（两个视频的复刻，各自循环播放）
   const gls = grp('lightshow', '✨', '灯光秀');
   // 变体切换：A = 全环应援棒 + 屋顶环带 + 舞台光束；B = 舞台中央单光团
-  const LS_VARIANTS = [['a', '灯光秀 A'], ['b', '灯光秀 B']];
   const lsVarRow = document.createElement('div');
   lsVarRow.className = 'hud-row';
   lsVarRow.innerHTML = '<label>版本</label>';
   const lsVarSeg = document.createElement('div');
   lsVarSeg.className = 'seg';
   const lsVarBtns = {};
-  for (const [id, name] of LS_VARIANTS) {
+  for (const { id, label: name, desc } of LS_VARIANTS) {
     const b = document.createElement('button');
     b.textContent = name;
+    b.title = desc;
     b.onclick = () => {
       lightState.lightShowVariant = id;
       lightState.lightShowT = 0;      // 换变体后从头播，避免两个时间轴长度不同导致跳段
       lightState.lsFreeze = false;
       for (const k of Object.keys(lsVarBtns)) lsVarBtns[k].classList.toggle('on', k === id);
       lsDurText.textContent = `${lsDurOf(id).toFixed(1)}s`;
-      toast(id === 'b' ? '切换到灯光秀 B（舞台中央光团）' : '切换到灯光秀 A（全环应援棒）');
+      lsDesc.textContent = desc;
+      toast(`切换到${name}`);
     };
     lsVarBtns[id] = b;
     lsVarSeg.appendChild(b);
@@ -982,7 +996,7 @@ function buildHUD() {
   lsVarBtns[lightState.lightShowVariant]?.classList.add('on');
   lsVarRow.appendChild(lsVarSeg);
   gls.appendChild(lsVarRow);
-  const lsDurOf = (id) => (id === 'b' ? lightShowBDuration(DATA.concert.lightShowB) : lightShowDuration(DATA.concert.lightShow));
+  const lsDurOf = (id) => lightShowDurationFor(id);
   const lsToggle = mkToggle(gls, '播放灯光秀', lightState.lightShow, (v) => {
     lightState.lightShow = v;
     lightState.lsFreeze = false;
@@ -992,8 +1006,9 @@ function buildHUD() {
   const lsInfo = document.createElement('div');
   lsInfo.className = 'hud-row';
   const lsDesc = document.createElement('label');
-  lsDesc.style.cssText = 'color:var(--text-dim);font-size:10.5px;line-height:1.5';
-  lsDesc.textContent = 'A：应援棒 + 屋顶环带 + 舞台光束 · B：舞台中央光团 · 循环播放';
+  // 换行 + 允许收缩：描述比版本按钮长得多，锁死 nowrap 会被裁成半句
+  lsDesc.style.cssText = 'color:var(--text-dim);font-size:10.5px;line-height:1.5;white-space:normal;flex:1 1 auto;text-align:left';
+  lsDesc.textContent = lsEntry(lightState.lightShowVariant).desc;
   lsInfo.appendChild(lsDesc);
   gls.appendChild(lsInfo);
   const lsStage = document.createElement('div');
@@ -1173,13 +1188,12 @@ function tickBody() {
   if (show && show.active) _showWasActive = true;
   _p('show');
   // 灯光秀自身时钟：只在启用时推进（改 timeScale 只影响它，不动常态呼吸）
-  const lsDef = lightState.lightShowVariant === 'b' ? DATA.concert.lightShowB : DATA.concert.lightShow;
-  if (lightState.lightShow && !lightState.lsFreeze) lightState.lightShowT += dt * (lsDef?.timeScale ?? 1);
+  if (lightState.lightShow && !lightState.lsFreeze) {
+    lightState.lightShowT += dt * lightShowTimeScale(lightState.lightShowVariant);
+  }
   // HUD 阶段指示
   if (lsStageEl && lightState.lightShow) {
-    const isB = lightState.lightShowVariant === 'b';
-    const ph = isB ? lightShowBPhaseAt(lightState.lightShowT, DATA.concert.lightShowB)
-      : lightShowPhaseAt(lightState.lightShowT, DATA.concert.lightShow);
+    const ph = lightShowPhaseFor(lightState.lightShowVariant, lightState.lightShowT);
     const txt = `${LS_PHASE_LABEL[ph.name] || ph.name} ${ph.t.toFixed(1)}/${ph.total.toFixed(1)}s`;
     if (txt !== lsLastPhase) { lsLastPhase = txt; lsStageEl.textContent = txt; }
   } else if (lsStageEl && lsLastPhase !== '待机') {
