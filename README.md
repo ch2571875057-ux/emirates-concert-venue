@@ -125,13 +125,20 @@ CDN 基址写的是**提交 SHA**（`index.html` 里的 `var REF`），不是 `@
 固定 SHA 后每个提交的内容是确定的，也不需要等缓存过期。
 
 ```
-node tools/pin_ref.mjs --check   # 只校验：REF 是 HEAD 祖先，且之后只改了 index.html
+node tools/pin_ref.mjs --check   # 只校验，不改文件
 node tools/pin_ref.mjs           # 把 REF 推到当前 HEAD
 ```
 
 **发版顺序：先 commit 资源改动 → 再跑 `pin_ref` → 最后 commit `index.html`。**
-这样 REF 指向的那个提交里已经装好了最新资源。`--check` 就是按这个约定校验的，
-REF 落在 HEAD 之后再出现别的文件改动就会报错。
+这样 REF 指向的那个提交里已经装好了最新资源。
+
+`--check` 只校验「REF 之后有没有 `js/`、`vendor/`、`assets/`、`styles.css` 的改动」，
+改 README、改 tools 不算，不用为文档改动白推一次 REF。
+
+> **一个坑**：CDN 的分支引用缓存是真的会咬着不放。这次 `styles.css` 已经补上
+> `visibility:hidden`，提交也推上去了，但 `@main` 那条路径返回的还是旧文件——
+> 浏览器里量到的 `#loading` 仍是 `visibility: visible`，看着像改动没生效。
+> 换 `@dd1b3fe` 这样的固定 SHA 立刻拿到新文件。所以现在不用 `@main`。
 
 > 例外：音频（`.m4a`）在 jsDelivr 会被 301 到 `raw.githubusercontent.com`（约 36–49 KB/s），
 > 但本项目音频码率只有 ~8.7 KB/s（41 秒 360 KB），流式播放完全跟得上，实测点开即出声。
