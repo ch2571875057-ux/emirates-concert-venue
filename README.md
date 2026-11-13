@@ -38,9 +38,11 @@ node server_nocache.mjs  # 没 Python 走这个
 - **侧边栏**：全高手风琴分组侧边栏（🎥视角 / 💡灯光 / 👥观众 / 🌊人浪 / 🎤歌手 / 🎆开场秀 / ✨灯光秀 / 🎮漫游），
   点击组头展开收起；可整体收起成 48px 图标轨（点图标直达分组）；底部状态栏实时显示
   视角名 · 时间 · FPS · draw calls；`?sb=collapsed` 初始收起，≤640px 小屏自动收起
-- **歌单（右侧）**：固定曲目单 —— 继续给十五岁的自己 / 树读 / 疑疑疑 / 如期 / 生长（王俊凯）。
-  点一条高亮该曲并在舞台两侧海浪副屏写出歌名（长歌名自动降字号）；
-  长名如「继续给十五岁的自己」会缩到能完整落在卷边可见带内。
+- **歌单（右侧）**：固定曲目单 —— 特别的人 / 树读 / 疑疑疑 / 如期 / 生长（王俊凯）。
+  点一条高亮该曲并在舞台两侧海浪副屏写出歌名（长歌名自动降字号）。
+  每条的 ▶ 按钮播放 `assets/audio/` 里的音源，再点暂停：后四首是 **30 秒官方试听**（Apple iTunes），
+  《特别的人》用的是用户自备的**完整曲**（`tebie.m4a`，41 s，360 KB：已去掉源文件的视频轨、moov 前置）。
+  想再换音源：自行合法获取后同名覆盖 `assets/audio/*.m4a`，代码无需改动。
   `?pl=collapsed` 初始收起；点击按钮可整体收成 52px 竖条
 - **视角**：侧边栏视角分组切换 鸟瞰全景 / 内场看舞台 / 看台视角 / 场馆外观 / 屋面俯视 / 自由，镜头自动补间并打字幕
 - **时间**：拖动 0–24h 滑杆，天空/太阳/雾/Bloom/灯光随时间连续变化（默认 21:00 演唱会夜景）
@@ -49,6 +51,9 @@ node server_nocache.mjs  # 没 Python 走这个
 - **第一人称漫游（v2）**：W/A/S/D 平移 · **Space/C 升降** · Shift 加速 · **按住拖拽转向**
   （FPS 风格，OrbitControls 漫游期间自动禁用）；眼高限制 6.1–58m，出界自动钳制
 - 每个开关都有 toast 反馈
+- **录视频**：直接开 <http://127.0.0.1:8141/STORYBOARD.html> —— 一镜一张卡，点「打开这一镜」自动跳过去，
+  「计时开录」按镜头时长倒数，「已录好」打勾记进度（存本机浏览器）。纯文本版见 [STORYBOARD.md](STORYBOARD.md)；
+  命令行 `node tools/storyboard.mjs --urls` 也能把 39 条完整地址打成一张表
 
 ## QA / 验收参数（固定机位复现）
 
@@ -56,7 +61,7 @@ node server_nocache.mjs  # 没 Python 走这个
 ?debug=1&ui=0&view=free&cam=x,y,z&look=x,y,z&fov=50&time=21
 &still=1                 # 定帧模式（headless 截图用）
 &layers=bowl,ground,...  # 逐层显影（bowl/ground/concert-field/stage/sound/
-                         #  stage-lights/audience/led-ribbon/sky）
+                         #  stage-lights/audience/crowd/singer/band/led-ribbon/sky/holo）
 &fx=normal|tide|pixel|stripe|meet|chase|ripple|spiral|duet   # 直接指定观众光效
 &pattern=heart|note|smiley|star|text      # 点阵图案（会连带把模式设为 pixel）
 &scroll=0                                # 冻结点阵横向摆动；&pshift=N 冻结到指定列偏移
@@ -68,6 +73,11 @@ node server_nocache.mjs  # 没 Python 走这个
 &lsdump=秒|off            # 把灯光秀各载体的真实数值（环带/屏 uniform、光束 alpha、看台 48 桶）打到 #loading-error
 &song=1..5               # 直接选中第 N 首（同步写到舞台副屏），配 &ui=0&view=stagefront 截图验收
 &pl=collapsed            # 右侧歌单初始收起
+&chrome=0                # 隐藏左右面板与 debug 角标，但保留视角字幕与 toast（录屏用；&ui=0 会把字幕一起关掉）
+&holo=0                  # 关闭全息投影
+&holoPhase=materialize   # 把全息定格到指定姿态（hidden/pillar/materialize/pulse/rise/
+                         #  spin/push/center/fly/docked）
+&holoT=秒                # 冻结全息时钟（配合 holoPhase 出静帧）
 ```
 
 headless 截图流水线（Edge 示例）：
@@ -87,11 +97,40 @@ msedge --headless=new --enable-unsafe-swiftshader \
 `preview/` 内含全部验收截图与 8 帧建造序列（`preview/sequence/`），按主题
 分目录（见下方「子目录约定」）；`render/` 为 1920×1080 最终交付图。
 
-- **开场秀**：HUD「开场秀」分组 ▶ 播放 / ■ 跳过；约 46s 时间轴——
-  P0 暗场 LED 倒计时 → P1 应援棒星海两轮波浪点亮（波源=舞台，亮度波沿看台径向传播）
-  → P2 光束风暴（频闪/扫描，摇摆 ×2）→ P3 **光束退场、星芒烟花接棒**（四芒星光斑
-  粒子 + 放射长芒 + 爆闪瞬照碗体，单发 3 支 → 终章环碗口 6 发齐爆，爆闪同步观众席
-  亮波）→ P4 尾声回归常态。QA：`?show=1&showT=秒` 定格任意时刻。
+- **开场秀（9 段 / 62.35 s，复用灯光秀与人浪）**：HUD「开场秀」分组 ▶ 播放 / ■ 跳过。
+  时间轴全部由 `DATA.show.segments` 驱动（`js/show.js` 只负责按段施加上下文，不再写死阶段），
+  每段可指定 `audience`（人浪光效）/ `lightShow`（灯光秀版本）/ `dimmer` / `lightsOff` / `lampBanks` /
+  `singer` / `led` / `waveText` / `holo`（全息姿态）/ `fireworks`。段表：
+
+  | # | 段 | 时长 | 观众席 | 灯光秀 | 全息 | 内容 |
+  |---|---|---|---|---|---|---|
+  | 1 | `countdown` | 5.00 | normal | — | hidden | 暗场，LED 屏倒数 5→1，灯组关闭、dimmer 0.15 |
+  | 2 | `wake` | 4.00 | **tide** | — | pillar | 灯组回升、dimmer 0.15→0.85，全息光柱先起 |
+  | 3 | `ringA` | 11.35 | 灯光秀接管 | **A 环带** | materialize | 全息显形，与 A 的三载体联动同拍 |
+  | 4 | `heartbeat` | 11.00 | 灯光秀接管 | **D 心跳** | pulse | 唯一暖色编舞，全息随拍点呼吸 |
+  | 5 | `ripple` | 4.00 | **ripple 涟漪** | — | rise | 光效切回人浪，全息上浮 |
+  | 6 | `spiral` | 4.00 | **spiral 螺旋** | — | spin | 螺旋臂绕场，全息自转 |
+  | 7 | `heart` | 4.00 | **pixel 心形** | — | push | 点阵心形 + 3 发单发烟花 |
+  | 8 | `finale` | 13.00 | 灯光秀接管 | **B 深蓝** | center | 深蓝光团 + 终章环碗口 6 发齐爆 |
+  | 9 | `outro` | 6.00 | tide → normal（3 s 处切换） | — | fly | 全息缩小飞向舞台左侧常驻位 |
+
+  **为什么灯光秀与人浪交替而不是叠加**：`updateAudience()` 的分支优先级是
+  `lightShowOf().w > 0.001` → 灯光秀接管看台，其次才是 `WAVE_FX_MODES`，所以两者在看台上互斥；
+  段表里每段只启用其中一个，交接处自然过渡。三段灯光秀的 `dur` 与 `lightShowDurationFor(id)` **严格相等**，
+  保证段尾 `w` 收到 0、不会硬切。`ShowManager.start()` 快照 13 个状态字段，`end()` 全部还原，
+  不再像旧版那样把用户手动设的 dimmer/观众模式留成开场秀的值。
+  QA：`?show=1&showT=秒` 定格任意时刻；`?show=1&showT=63` 可直接看恢复常态后的现场。
+
+- **全息投影（`js/holo.js` + `assets/holo.glb`）**：Q 版吉祥物以全息形态出现在舞台前沿
+  （`(-32.4, 7.32, 95.5)`，脚底贴舞台台面，默认高 11.5 m），开场秀期间随段切换姿态（光柱 → 显形扫描 → 拍点呼吸
+  → 上浮 → 自转 → 前推 → 居中），尾声**缩小 0.55 倍飞到舞台左侧常驻位**（`(-54.0, 7.32, 97.0)`，与台面同高）
+  待机自转+上下浮动，可随时用 HUD「全息投影」开关隐藏/恢复。
+  实现要点：`ShaderMaterial` 自定义片元（`vH` 用**模型局部高度**归一化，不是 uv；冷蓝重映射 +
+  按身高扫描线 + 竖向流动亮带 + 菲涅尔边缘 + `uSweep` 显形扫描 + 行级 uv 抖动），
+  `NormalBlending` 而非 Additive（否则白衣服被 bloom 洗白），`depthWrite:false` + `DoubleSide`。
+  HUD 开关之外还有三个 QA 参数：`?holo=0` 关闭、`?holoPhase=<姿态>` 定格（hidden/pillar/
+  materialize/pulse/rise/spin/push/center/fly/docked）、`?holoT=` 冻结时钟。
+  `?layers=holo` 可单独隔离全息层。验收：`node tools/verify_holo.mjs`。
 
 - **舞台 v2（海洋主题，移植自 sandbox/stage-lab.js）**：箱体台+发光台口+中央发光
   阶梯、胶囊形 LED 月夜海面主屏（程序化 Canvas，开场秀倒计时重绘）、**双侧海浪雕塑**
@@ -174,6 +213,8 @@ msedge --headless=new --enable-unsafe-swiftshader \
 ## 结构
 
 ```
+STORYBOARD.md   分镜脚本：录制镜头表 / 录屏工作流 / 已知坑（由 tools/storyboard.mjs 生成）
+STORYBOARD.html 排镜台：一镜一卡，可跳转 / 计时 / 打勾（同上，生成物）
 index.html      页面骨架 + import map + HUD
 styles.css      视觉系统
 js/app.js       渲染循环、相机补间、时间/氛围驱动、UI 状态机、右侧歌单、QA 参数
@@ -193,17 +234,20 @@ js/lightshowc.js 灯光秀 C 环流（环向/径向正弦通道，六段式曲�
 js/lightshowd.js 灯光秀 D 心跳（拍点包络 + 暖色，五段式曲线）
 js/lightshowe.js 灯光秀 E 极光（双路慢波 + 折返，五段式曲线）
 js/lightshowRegistry.js 灯光秀变体表（id/名称/描述/参数键/编舞函数/时长，单一真相）
+js/holo.js     全息投影（自定义 ShaderMaterial：按身高扫描线 + 菲涅尔 + 显形扫描 + 位姿状态机）
 js/standProfile.js  24 扇区看台坡面剖面（tools/measure_stands.mjs 生成，勿手改）
 tools/measure_stands.mjs  看台剖面测量工具（只读 Arsenal.glb，可复现）
 assets/         Arsenal.glb（2.4 MB）+ crowd_a/b.glb（人模 0.06/0.18 MB）
                 + singer.glb + band/*.glb（6 件体素乐器，共 333 KB）
+                + audio/*.m4a（歌单 4 首官方试听（共 3.9 MB）+ 自备完整曲 1 首（0.35 MB））
+                + holo.glb（全息吉祥物模型，1.0 MB）
 vendor/         three@0.169.0 本地副本（MIT）
 ```
 
 ### 子目录约定
 
 ```
-tools/           正式工具链（15 个）
+tools/           正式工具链（19 个）
   measure_stands.mjs       看台剖面测量（生成 standProfile.js）
   export_sticks.mjs        点阵编址导出
   verify_wavefx.mjs        人浪 6 档离线断言（形状/方向/周期/边界 + 与 modes 表交叉校验）
@@ -211,7 +255,13 @@ tools/           正式工具链（15 个）
   verify_lightshow_seam.mjs      灯光秀循环接缝断言（防 A/B 历史上 1.000→0.180 的突跳）
   verify_lightshowb.mjs    灯光秀 B 编舞断言（六段全覆盖 / 色温单调 / 观众暗态）
   verify_pixel_layout.mjs  点阵编址与图案断言
+  verify_show_timeline.mjs 开场秀段表断言（段表/时长/互斥/烟花时刻/全息姿态序列）
+  verify_holo.mjs          全息投影断言（姿态插值/着色器要点/状态机）
   verify_pixel_sway.mjs    点阵横摆幅度断言（≤2% 屏宽）
+  fetch_audio.mjs          抓取歌单官方 30 秒试听到 assets/audio/（--check 只体检）
+  verify_playlist.mjs      歌单契约与音频素材断言（id/文件/魔数/时长/文档一致）
+  storyboard.mjs           分镜脚本（--write 生成 md+html / --check 校验 / --urls 打印地址）
+  prompter-template.mjs    排镜台页面模板（被 storyboard.mjs 引用，不单独运行）
   pixel_*.py stick_bbox.py 点阵 ASCII 与统计
   _check_self.py           三角形级射线可见性检查（README 验收用）
   _penet_final.py          摆动全程穿模检查（README 验收用）
@@ -321,7 +371,8 @@ render/          5 张 1920×1080 最终交付图
   主唱环绕，拖拽即暂停）
 - **主唱歌手**：Q 版歌手（41 骨骼 + 6 动画，`assets/singer.glb`）站在舞台上，默认
   循环 dance_01；HUD「歌手」分组可切换 6 段动作（dance/cheer/clap/greet/agree/bow，
-  0.35s 交叉淡入）；开场秀联动——P1 打招呼 → P2/P3 跳舞 → P4 鞠躬谢幕 → 结束还原；
+  0.35s 交叉淡入）；开场秀联动——`wake` 打招呼 → `ringA` 跳舞 → `heartbeat` 拍手 → `ripple`/`spiral`
+  跳舞 → `heart`/`finale` 欢呼 → `outro` 鞠躬谢幕 → 结束还原（动作逐段写在 `DATA.show.segments[].singer`）；
   专属追光 + 近距补光保证夜景可读。QA：`?singerClip=名&singerT=秒` 定格任意动作。
 - **内场人模**：两个低模（各 ~730 三角）`InstancedMesh` 实例化共 ~1280 人（≈93 万
   三角、2 draw call），站区内**整齐网格排列**（行距 1.4m / 列距 1.1m，微抖动保持
@@ -382,4 +433,6 @@ render/          5 张 1920×1080 最终交付图
 
 - 代码：MIT
 - `assets/Arsenal.glb`：模型版权归原建模方/俱乐部所有，仅在 `data.js` 中读出参数并在运行时加载展示，**不在 MIT 许可范围内**
+- `assets/audio/*.m4a`：Apple iTunes 提供的 30 秒官方试听片段，词曲版权与录音版权归原权利人，
+  仅作本地演示用，**不在 MIT 许可范围内**；抓取脚本见 `tools/fetch_audio.mjs`
 - 《体育场建模复现范式》文档：归原作者所有，不在本仓库许可范围内

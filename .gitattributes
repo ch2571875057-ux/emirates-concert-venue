@@ -1,0 +1,2 @@
+# 批处理必须保持 CRLF：cmd 解析 GBK + LF 组合时会静默退出 255，双击表现为「打不开」
+*.bat text eol=crlf
