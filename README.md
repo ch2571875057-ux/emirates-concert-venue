@@ -100,6 +100,20 @@ Pages 这条出口的带宽被限到约 36 KB/s（实测单连接 19–45 KB/s�
 加载层底部会显示当前用的是哪个源，形如 `fastly · 114ms` / `本站（本地）`。
 25 秒还没加载完，会自己提示换网络 / `?cdn=off` / 改本地跑。
 
+### 怎么选节点（踩过的坑）
+
+探测用的是 **64 KB 的 `assets/crowd_a.glb`**，不是 2 KB 的小 js 文件 ——
+小文件任何节点都在 400 ms 内返回，量出来的是 TTFB 不是吞吐量。
+上一版就是被这个坑住：`cdn.jsdmirror.com` 探 396 ms 看着最快被选中，
+实拉 `Arsenal.glb` 只有 7 KB/s，首屏 7.5 MB 变成几分钟。
+
+选定后**按固定优先级**（`fastly` → `jsdelivr` → `onms` → `jsdmirror`）挑，不按测出的
+KB/s 排序：64 KB 里 TLS 握手占一半，同一节点两次能测出 36 KB/s 和 2183 KB/s，排序会翻车。
+`fastly` 在几十次实测里一直最快（`Arsenal.glb` 2.2–4.5 MB/s）。
+
+另外探测**不能「谁先回来就用谁」**——那样选的是延迟最低的，而不是优先级最高的。
+所以等四个探测都回来（或 3 秒硬兜底）再统一挑，这个等待会算在首屏里。
+
 > **改完代码 push 后，jsDelivr 的 `@main` 最长要 12 小时才更新**（它按分支引用缓存）。
 > 急着看效果就临时用带 commit SHA 的地址：
 > `?cdn=https://cdn.jsdelivr.net/gh/ch2571875057-ux/emirates-concert-venue@<sha>/`。
