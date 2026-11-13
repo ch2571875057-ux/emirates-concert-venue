@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排镜台 · 照着一镜一镜拍</title>
+<style>
+:root{--bg:#0b0f18;--card:#141a26;--line:#2a3444;--txt:#e6eeff;--dim:#8fa0c5;--acc:#6fa8ff;--ok:#4bd18a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+header{position:sticky;top:0;z-index:9;background:rgba(11,15,24,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:12px 18px}
+h1{margin:0 0 6px;font-size:17px;font-weight:600}
+.steps{background:#121a27;border:1px solid #24334a;border-radius:10px;padding:12px 16px 12px 34px;margin:0 0 4px;font-size:13px;color:#cbd9ef}
+.steps li{margin:5px 0}
+.steps b{color:#fff}
+.steps code{font-size:11.5px}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--dim)}
+.pbar{flex:1;min-width:160px;height:7px;background:#1d2534;border-radius:4px;overflow:hidden}
+.pbar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4bd18a,#6fa8ff);transition:width .25s}
+main{padding:16px 18px 80px;max-width:1180px;margin:0 auto}
+h2{font-size:14px;margin:26px 0 10px;color:var(--acc);letter-spacing:.5px}
+h2:first-of-type{margin-top:6px}
+.card{display:grid;grid-template-columns:82px 1fr;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0}
+.card.done{opacity:.52}
+.card.done .sid{color:var(--ok)}
+.sid{font:600 15px/1.3 ui-monospace,Consolas,monospace;color:var(--acc)}
+.sid small{display:block;font:400 11px/1.4 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--dim);margin-top:3px;letter-spacing:0}
+.title{font-weight:600;margin-bottom:3px}
+.title .dur{font-weight:400;color:var(--dim);font-size:12px;margin-left:8px}
+.act{color:#c9d7f0;font-size:13px;margin:4px 0}
+.note{color:var(--dim);font-size:12px;margin-top:4px}
+.cap{font-size:12px;color:#a9b8d4;margin-top:4px}
+.cap b{color:var(--txt)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:9px}
+button{font:inherit;font-size:12.5px;cursor:pointer;border-radius:7px;border:1px solid var(--line);background:#1b2331;color:var(--txt);padding:5px 11px}
+button:hover{background:#243046;border-color:#3c4b64}
+button.go{background:#22406e;border-color:#3d6bb0;color:#dfeaff}
+button.go:hover{background:#2b5088}
+button.t{background:#1f3a2c;border-color:#2f6b4c;color:#c9f5dd}
+button.t.on{background:#2c6b45;border-color:#4bd18a}
+label.ck{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12.5px;cursor:pointer}
+input[type=checkbox]{width:15px;height:15px;accent-color:#4bd18a}
+code{font:12px ui-monospace,Consolas,monospace;background:#0d1220;border:1px solid #222c3c;border-radius:5px;padding:2px 6px;color:#9fd0ff;word-break:break-all}
+.timer{font:600 15px/1 ui-monospace,Consolas,monospace;color:var(--ok);min-width:64px}
+.hint{background:#16202f;border-left:3px solid var(--acc);padding:9px 13px;border-radius:0 8px 8px 0;color:#c4d3ea;font-size:12.5px;margin:10px 0 4px}
+footer{position:fixed;left:0;right:0;bottom:0;background:rgba(11,15,24,.94);border-top:1px solid var(--line);padding:8px 18px;font-size:12px;color:var(--dim);display:flex;gap:16px;flex-wrap:wrap}
+footer b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header>
+<h1>排镜台 · 照着一镜一镜拍</h1>
+<div class="bar">
+<span>已完成 <b id="cnt">0</b> / <b id="total">0</b> 镜</span>
+<div class="pbar"><i id="pb"></i></div>
+<button id="reset">清空记录</button>
+<span>当前站点：<code id="site"></code></span>
+</div>
+</header>
+<div style="max-width:1180px;margin:0 auto;padding:16px 18px 0">
+<ol class="steps">
+<li>先把站点跑起来：<b>线上版</b>直接开着本页就行；<b>本地版</b>双击 <b>启动服务器.bat</b>，等黑窗口里出现地址，别关那个窗口。</li>
+<li>窗口摆成 <b>1920×1080</b>、缩放 100%；按 <b>F11</b> 全屏、<b>Ctrl+Shift+B</b> 收起书签栏。</li>
+<li>录屏软件开 <b>窗口采集</b> 抓这个浏览器窗口，<b>60 帧</b>，声音只收系统声音。</li>
+<li>回到本页，从 A1 开始：点 <b>「打开这一镜」</b> → 等进度条走完 → <b>再等 1.5 秒</b> → 点<b>「计时开录」</b> → 录屏软件开录 → 计时器到点就停。</li>
+<li>录完勾上 <b>「已录好」</b>，文件名存成镜号（<code>A1.mp4</code>），再点下一镜的「打开这一镜」。</li>
+</ol>
+</div>
+<main id="main"></main>
+<footer>
+<span>每镜流程：<b>点「打开」→ 等进度条走完 → 再等 1.5 秒 → 点「计时开录」→ 录完打勾</b></span>
+<span>钩子存在本机浏览器里，关掉页面也不会丢</span>
+</footer>
+<script>
+var SHOTS=[{"id":"A1","ch":"A","title":"黄昏鸟瞰","dur":8,"q":"view=aerial&time=17.4&chrome=0","act":"打开即录，无需操作","cap":"酋长球场 · 黄昏","note":"实测 mean 38.8。同一机位到 19 点只剩 5.4–5.7，全黑不可用。","main":true,"opt":false},{"id":"A2","ch":"A","title":"南立面","dur":7,"q":"view=facade&time=17.9&chrome=0","act":"打开即录","cap":"北伦敦 · 开场前","note":"实测 36.1。桅架与屋盖轮廓清楚。","main":true,"opt":false},{"id":"A3","ch":"A","title":"场馆侧影","dur":7,"q":"debug=1&cam=-90,60,150&look=-32,20,49&fov=52&time=17.5&chrome=0","act":"打开即录（自定义机位，必须带 debug=1）","cap":"同一片夜色","note":"实测 28.5（time=17.8 只有 23.6，偏暗，所以提前到 17.5）。原计划的 view=roof 在 21 点 mean 5.8 全黑，已换成这个侧机位；chrome=0 会把 debug 角标一起藏掉。","main":true,"opt":false},{"id":"B0","ch":"B","title":"开场秀 · 主机位全场","dur":62.4,"q":"view=stagefront&show=1&chrome=0","act":"打开后等 1.5 s 稳定帧即开录，一口气录满 62.4 s","cap":"（无字幕，后期统一加）","note":"主轴线。stagefront 离舞台约 75 m，全场可见但全息只有约 130 px 高；细部靠下面的分段补镜。","main":false,"opt":false},{"id":"B1","ch":"B","title":"倒计时","dur":5,"q":"view=aud-north&show=1&showT=0&chrome=0","act":"打开即录","cap":"19:30 · 开场","note":"全长最暗的一镜（实测 mean 13.7，属设计）：灯组关闭、dimmer 0.15，画面主体只有 LED 大数字 5→1；调色时不要提亮，否则后面的爆发没有对比。","main":true,"opt":false},{"id":"B2","ch":"B","title":"星海点亮 · 全息光柱","dur":4,"q":"view=stagefront&show=1&showT=5&chrome=0","act":"打开即录","cap":"星海","note":"看台切 tide 潮汐，全息 pose=pillar 升起光柱，dimmer 0.25→1 抬亮。","main":true,"opt":false},{"id":"B3","ch":"B","title":"环带呼吸（灯光秀 A）","dur":11.4,"q":"view=aud-east&show=1&showT=9&chrome=0","act":"打开即录","cap":"第一束光","note":"11.35 s，与灯光秀 A 时长严格对齐；全息 materialize 显形。","main":true,"opt":false},{"id":"B4","ch":"B","title":"心跳（灯光秀 D）","dur":11,"q":"view=stagefront&show=1&showT=20.35&chrome=0","act":"打开即录","cap":"心跳","note":"不要用 aud-pit 拍这一段：该机位下 LED 白椭圆被 bloom 冲爆、全息变成白剪影（实测 mean 134.9、blown 0.81%）。","main":true,"opt":false},{"id":"B5","ch":"B","title":"涟漪扩散","dur":4,"q":"view=aud-north&show=1&showT=31.35&chrome=0","act":"打开即录","cap":"涟漪","note":"看台同心环由内场向外扩散。","main":true,"opt":false},{"id":"B6","ch":"B","title":"螺旋上升","dur":4,"q":"view=aud-east&show=1&showT=35.35&chrome=0","act":"打开即录","cap":"螺旋","note":"斜向单臂旋转，侧机位最容易看出方向。","main":true,"opt":false},{"id":"B7","ch":"B","title":"心形点阵 + 首发烟花","dur":4,"q":"view=aud-pit&show=1&showT=39.35&chrome=0","act":"打开即录","cap":"你","note":"内场点阵拼心形，同时 0.6/1.8/3.0 s 三发烟花；内场前排视角仰看。","main":true,"opt":false},{"id":"B8","ch":"B","title":"深蓝终章（灯光秀 B + 环形烟花）","dur":13,"q":"view=aud-south&show=1&showT=43.35&chrome=0","act":"打开即录","cap":"终章","note":"实测 86.4。south 机位越过舞台看星海，烟花在画面上方展开。","main":true,"opt":false},{"id":"B9","ch":"B","title":"谢幕 · 全息飞向常驻位","dur":6,"q":"view=stagefront&show=1&showT=56.35&chrome=0","act":"打开即录","cap":"谢谢","note":"全息缩到 0.55 倍、2.4 s 内飞到舞台左侧 (-54, 7.32, 97) 常驻；歌手 bow。","main":true,"opt":false},{"id":"C1","ch":"C","title":"视角切换 + 字幕","dur":12,"q":"view=stagefront&pl=collapsed","act":"保留左侧栏（这一段就是要拍 UI）：依次点「鸟瞰全景」→「看台视角」→「内场看舞台」，每颗间隔 4 s；每次切换会补间 1.7 s 并弹出 3.4 s 字幕","cap":"（由 HUD 自动给出：视角名 + 说明）","note":"实测 70.6。不能用 chrome=0，面板藏了就点不到按钮；右侧歌单收成细条。默认机位是夜景鸟瞰（几乎全黑），所以用 view=stagefront 起步。看台视角机位 y=44 正卡在 LED 环带高度，画面会有一条过曝白带，只当「字幕演示」用。","main":true,"opt":false},{"id":"C2a","ch":"C","title":"灯光秀 A · 环带","dur":11.4,"q":"view=aud-east&lightshow=a&chrome=0","act":"打开即录整段（11.35 s），剪辑时取精彩 4 s","cap":"A 环带","note":"呼吸→爆发→收束→暗场→白带→回落。","main":true,"opt":false},{"id":"C2b","ch":"C","title":"灯光秀 B · 光团","dur":13,"q":"view=aud-west&lightshow=b&chrome=0","act":"打开即录整段（13.0 s）","cap":"B 光团","note":"点亮→闪白→转冷→深蓝→竖纹→隐去；LED 屏会被压成深蓝底。","main":false,"opt":false},{"id":"C2c","ch":"C","title":"灯光秀 C · 环流","dur":12.6,"q":"view=aud-east&lightshow=c&chrome=0","act":"打开即录整段（12.6 s）","cap":"C 环流","note":"实测 aud-east mean 110，五套里最亮最好看的一套。","main":true,"opt":false},{"id":"C2d","ch":"C","title":"灯光秀 D · 心跳","dur":11,"q":"view=aud-west&lightshow=d&chrome=0","act":"打开即录整段（11.0 s）","cap":"D 心跳","note":"全场同步拍点，唯一暖色编舞。","main":false,"opt":false},{"id":"C2e","ch":"C","title":"灯光秀 E · 极光","dur":14.4,"q":"view=aud-west&lightshow=e&chrome=0","act":"打开即录整段（14.4 s）","cap":"E 极光","note":"实测 aud-west mean 113，最亮；折返段环向相位真反向。","main":true,"opt":false},{"id":"C3a","ch":"C","title":"人浪 · 常规","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=normal","act":"打开即录 3 s","cap":"常规","note":"基线对照，其他七档的差别一眼可辨。","main":false,"opt":false},{"id":"C3b","ch":"C","title":"人浪 · 潮汐","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=tide","act":"打开即录 3 s","cap":"潮汐","note":"环向明暗推进。","main":false,"opt":false},{"id":"C3c","ch":"C","title":"人浪 · 条纹","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=stripe","act":"打开即录 3 s","cap":"条纹","note":"六道竖条缓慢漂移。","main":false,"opt":false},{"id":"C3d","ch":"C","title":"人浪 · 相遇","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=meet","act":"打开即录 3 s","cap":"相遇","note":"两侧向中心点亮，撞上后整场闪一次。","main":false,"opt":false},{"id":"C3e","ch":"C","title":"人浪 · 追逐","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=chase","act":"打开即录 3 s","cap":"追逐","note":"单头绕场追赶，带尾迹。","main":false,"opt":false},{"id":"C3f","ch":"C","title":"人浪 · 涟漪","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=ripple","act":"打开即录 3 s","cap":"涟漪","note":"同心环由舞台向外扩散。","main":true,"opt":false},{"id":"C3g","ch":"C","title":"人浪 · 螺旋","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=spiral","act":"打开即录 3 s","cap":"螺旋","note":"斜向单臂旋转。","main":true,"opt":false},{"id":"C3h","ch":"C","title":"人浪 · 对撞","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&fx=duet","act":"打开即录 3 s","cap":"对撞","note":"两个亮头反向绕场，交错时闪一下。","main":false,"opt":false},{"id":"C4a","ch":"C","title":"点阵 · 心形","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&pattern=heart&scroll=0","act":"打开即录 3 s","cap":"心形","note":"内场 50×31 点阵拼心形。","main":true,"opt":false},{"id":"C4b","ch":"C","title":"点阵 · 音符","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&pattern=note&scroll=0","act":"打开即录 3 s","cap":"音符","note":"♪ 高音谱号，和心形一样是参数曲线描出来的。","main":false,"opt":false},{"id":"C4c","ch":"C","title":"点阵 · 笑脸","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&pattern=smiley&scroll=0","act":"打开即录 3 s","cap":"笑脸","note":"☺ 两只眼睛 + 弧形嘴。","main":false,"opt":false},{"id":"C4d","ch":"C","title":"点阵 · 星星","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&pattern=star&scroll=0","act":"打开即录 3 s","cap":"星星","note":"★ 五角星，五个顶点连线后光栅化成点阵。","main":false,"opt":false},{"id":"C4e","ch":"C","title":"点阵 · 字母","dur":3,"q":"debug=1&cam=-70,46,-10&look=-32,6,52&fov=55&chrome=0&pattern=text&scroll=0","act":"打开即录 3 s","cap":"BB","note":"BB 字样。","main":false,"opt":false},{"id":"C5a","ch":"C","title":"歌手特写","dur":4,"q":"view=sg-close&chrome=0","act":"打开即录 4 s","cap":"主唱","note":"实测 mean 153，偏亮但人形清楚；追光打在脸上。","main":true,"opt":false},{"id":"C5b","ch":"C","title":"歌手环绕运镜","dur":6,"q":"view=sg-orbit&orbitT=3.2&chrome=0","act":"打开即录 6 s","cap":"环绕","note":"自动绕歌手转圈；拖拽会退出环绕。","main":true,"opt":false},{"id":"C6a","ch":"C","title":"歌单 · 点播《树读》","dur":8,"q":"view=stagefront&sb=collapsed","act":"保留右侧歌单：点第 2 条「树读」的 ▶，等面板高亮、副屏写出歌名、出声后录 8 s","cap":"《树读》","note":"实测 69.1。首个音频文件约有 1.5 s 解码预热（按钮先显示「…」再变「⏸」），剪辑时切掉。","main":true,"opt":false},{"id":"C6b","ch":"C","title":"歌单 · 《特别的人》","dur":6,"q":"view=stagefront&sb=collapsed","act":"点第 1 条「特别的人」的 ▶，录 6 s（全曲 41 s，也可多录几段做背景音）","cap":"《特别的人》","note":"用户自备全曲，已去视频轨 + faststart，360 KB。","main":false,"opt":false},{"id":"C7","ch":"C","title":"全息常驻待机","dur":4,"q":"debug=1&cam=-54,12,80&look=-54,9.5,97&fov=45&chrome=0&holoPhase=docked&holoT=1","act":"打开即录 4 s","cap":"吉祥物","note":"实测 107。常驻位在舞台左侧 (-54, 7.32, 97)、0.55 倍（6.3 m 高）；机位放在观众侧正对它，背后是海浪屏与环带。缓慢自转 + 上下浮动。","main":true,"opt":false},{"id":"C8","ch":"C","title":"第一人称漫游","dur":6,"q":"walk=1&walkAt=-32.4,22,60&walkYaw=3.14159&chrome=0","act":"打开后按住 W 前进，录 6 s","cap":"走两步","note":"实测 99.8。站在观众席上方（y=22、z=60）朝舞台看，前景是人群剪影；按住 W 前进就是一段「飞向舞台」。walk 的高度被钳在 6.1–58，站在内场 z<78 会贴到人墙、画面全是巨型人头，别放那儿。","main":true,"opt":false},{"id":"D1","ch":"D","title":"夜景鸟瞰收尾","dur":8,"q":"view=aerial&time=21&ui=0","act":"打开即录","cap":"酋长球场 · 灯光未熄","note":"实测 mean 3.8：纯空镜，ui=0 连字幕与面板一起关掉，只留画面。夜间鸟瞰偏暗是刻意的收尾感；想更亮可换 time=19.5。","main":true,"opt":false}];
+var CHS=[{"id":"A","title":"片头空镜","desc":"黄昏窗口内三个外景，建立场地。"},{"id":"B","title":"开场秀","desc":"9 段 62.35 s；B0 是主机位全场，B1–B9 逐段补镜。"},{"id":"C","title":"功能展示","desc":"视角、5 套灯光秀、8 档人浪、5 种点阵、歌手、歌单音频、全息常驻、漫游。"},{"id":"D","title":"片尾","desc":"夜间鸟瞰收尾。"}];
+var BASE=(function(){var p=location.pathname;return location.origin+p.replace(/\/[^\/]*$/,"");})();
+try{var _s=document.getElementById("site");if(_s)_s.textContent=BASE+"/";}catch(e){}
+var SHOWTOTAL=62.35;
+var KEY="concert1.prompter.v1";
+var done={};try{done=JSON.parse(localStorage.getItem(KEY)||"{}")||{};}catch(e){done={};}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(done));}catch(e){}}
+function mmss(sec){var t=Math.round(sec);var m=Math.floor(t/60);var s=t%60;return m+":"+(s<10?"0":"")+s;}
+function el(tag,cls,txt){var d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;}
+function urlOf(s){return BASE+"/?"+s.q;}
+function render(){
+  var main=document.getElementById("main");main.innerHTML="";
+  var total=SHOTS.length;
+  var n=0;for(var i=0;i<total;i++){if(done[SHOTS[i].id])n++;}
+  document.getElementById("cnt").textContent=n;
+  document.getElementById("total").textContent=total;
+  document.getElementById("pb").style.width=(n/total*100).toFixed(1)+"%";
+  CHS.forEach(function(ch){
+    var rows=SHOTS.filter(function(s){return s.ch===ch.id;});
+    if(!rows.length)return;
+    var sum=rows.reduce(function(a,s){return a+s.dur;},0);
+    var h=el("h2",null,ch.id+". "+ch.title+"　"+rows.length+" 镜 / 约 "+mmss(sum));
+    main.appendChild(h);
+    if(ch.id==="A"){main.appendChild(el("div","hint","空镜只能用黄昏（time=17.2–18.5）。19 点以后的鸟瞰/外观全黑，别自己改时间。"));}
+    if(ch.id==="B"){main.appendChild(el("div","hint","B0 是主机位全场 62.4 秒，一口气录完；B1–B9 是按 9 段拆开的补镜，挑着录就行。带 showT 的镜：加载后会先跳到那一秒，然后继续往前跑，录晚了这段就过去了 —— 重新点「打开」再来一次。"));}
+    if(ch.id==="C"){main.appendChild(el("div","hint","C1 和 C6 需要你手动点面板上的按钮；其余都是打开就录。这几条都很短（3–14 秒），可以连着刷一遍再挑。"));}
+    rows.forEach(function(s){main.appendChild(card(s));});
+  });
+}
+function card(s){
+  var c=el("div","card"+(done[s.id]?" done":""));
+  var left=el("div");
+  var sid=el("div","sid",s.id);
+  var sm=el("small",null,s.main?"主片":"补镜");
+  sid.appendChild(sm);left.appendChild(sid);
+  var right=el("div");
+  var t=el("div","title",s.title);
+  t.appendChild(el("span","dur","· "+s.dur+" s"+(s.opt?" · 可选":"")));
+  right.appendChild(t);
+  right.appendChild(el("div","act",s.act));
+  if(s.cap&&s.cap.indexOf("（")!==0){var cp=el("div","cap");cp.appendChild(document.createTextNode("字幕："));var bb=el("b",null,s.cap);cp.appendChild(bb);right.appendChild(cp);}
+  if(s.note)right.appendChild(el("div","note",s.note));
+  var row=el("div","row");
+  var bOpen=el("button","go","打开这一镜");
+  bOpen.onclick=function(){window.open(urlOf(s),"_blank");};
+  row.appendChild(bOpen);
+  var timer=el("span","timer","0.0s");
+  var bT=el("button","t","计时开录");
+  var tid=null,t0=0;
+  bT.onclick=function(){
+    if(tid){clearInterval(tid);tid=null;bT.textContent="计时开录";bT.classList.remove("on");timer.textContent="0.0s";return;}
+    t0=Date.now();bT.textContent="停";bT.classList.add("on");
+    tid=setInterval(function(){
+      var e=(Date.now()-t0)/1000;
+      if(e<=s.dur){timer.textContent=e.toFixed(1)+"s";}
+      else{timer.textContent="超 "+(e-s.dur).toFixed(1)+"s";}
+      if(e>=s.dur&&tid){clearInterval(tid);tid=null;bT.textContent="到了，停录";bT.classList.remove("on");}
+    },100);
+  };
+  row.appendChild(bT);row.appendChild(timer);
+  var lab=el("label","ck");
+  var cb=document.createElement("input");cb.type="checkbox";cb.checked=!!done[s.id];
+  cb.onchange=function(){if(cb.checked){done[s.id]=1;}else{delete done[s.id];}save();render();};
+  lab.appendChild(cb);lab.appendChild(document.createTextNode("已录好"));
+  row.appendChild(lab);
+  var bCopy=el("button",null,"复制地址");
+  bCopy.onclick=function(){
+    var u=urlOf(s);
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u);bCopy.textContent="已复制";}
+    else{window.prompt("手动复制这段地址：",u);}
+    setTimeout(function(){bCopy.textContent="复制地址";},1200);
+  };
+  row.appendChild(bCopy);
+  right.appendChild(row);
+  c.appendChild(left);c.appendChild(right);
+  return c;
+}
+document.getElementById("reset").onclick=function(){if(!confirm("清空所有已录记录？"))return;done={};save();render();};
+render();
+</script>
+</body>
+</html>

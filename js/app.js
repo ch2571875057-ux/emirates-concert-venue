@@ -301,6 +301,15 @@ Promise.all([
     if (!hudBuilt) buildHUD();
     if (!playlistBuilt) buildPlaylist();
   }
+  // QA：?chrome=0 只隐藏左右面板与 debug 角标，保留 #caption / #toast-box。
+  // 录屏用：?ui=0 会把整个 #hud 关掉（字幕与 toast 一起消失），而不关面板又会入镜。
+  if (Q.get('chrome') === '0') {
+    const sbEl = document.getElementById('sidebar');
+    const plEl = document.getElementById('playlist');
+    if (sbEl) sbEl.style.display = 'none';
+    if (plEl) plEl.style.display = 'none';
+    debugEl.classList.add('hidden');
+  }
   // QA：?song=1..5 直接选中第 N 首（写到舞台副屏，便于 headless 截图验收）
   if (Q.get('song') != null) {
     const n = parseInt(Q.get('song'), 10);
