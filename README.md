@@ -362,7 +362,7 @@ vendor/         three@0.169.0 本地副本（MIT）
 ### 子目录约定
 
 ```
-tools/           正式工具链（20 个）
+tools/           正式工具链（21 个）
   measure_stands.mjs       看台剖面测量（生成 standProfile.js）
   export_sticks.mjs        点阵编址导出
   verify_wavefx.mjs        人浪 6 档离线断言（形状/方向/周期/边界 + 与 modes 表交叉校验）
@@ -378,6 +378,7 @@ tools/           正式工具链（20 个）
   storyboard.mjs           分镜脚本（--write 生成 md+html / --check 校验 / --urls 打印地址）
   prompter-template.mjs    排镜台页面模板（被 storyboard.mjs 引用，不单独运行）
   pin_ref.mjs              把 index.html 里 CDN 的 REF 固定到某个提交（--check 只校验）
+  sync_ref.mjs             提交走 API 后把本地 git 对象对齐到远端（幂等）
   pixel_*.py stick_bbox.py 点阵 ASCII 与统计
   _check_self.py           三角形级射线可见性检查（README 验收用）
   _penet_final.py          摆动全程穿模检查（README 验收用）
