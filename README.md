@@ -37,26 +37,72 @@ node server_nocache.mjs  # 没 Python 走这个
 
 **<https://ch2571875057-ux.github.io/emirates-concert-venue/>**
 
-GitHub Pages 已经发布，但**它这条出口的带宽被限到约 36 KB/s**（实测：单连接 19–45 KB/s，
-8 并发聚合也只有 36 KB/s；首屏要约 7.5 MB，按这个速度得等三分钟以上）。所以线上版做了
-一次资源重定向：**HTML 壳留在 Pages，代码与模型全部走 jsDelivr**（同一个 GitHub 仓库，
-零迁移）。实测 `cdn.jsdelivr.net` 拉 `Arsenal.glb` 是 4.4 MB/s，`three.module.js` 经 brotli
-压缩后只传 261 KB —— 冷启动从「三分钟没完」变成 **8–13 秒**，热启动 1–2 秒。
+### 为什么不能直接扔到 GitHub Pages
 
-实现只有 `index.html` `<head>` 里的一段脚本：非 `127.0.0.1`/`localhost` 时插入
-`<base href="https://cdn.jsdelivr.net/gh/.../main/">`，相对路径全部自动跟随，`js/data.js`
-里一个资源地址都没改。**本地依然零依赖、断网可跑。**
+Pages 这条出口的带宽被限到约 36 KB/s（实测单连接 19–45 KB/s，8 并发聚合也只有 36 KB/s）。
+首屏要约 7.5 MB，按这个速度**三分钟都开不完**，这就是「别的电脑打不开」的真实原因——
+不是 404，也不是权限，是卡在下载上。
 
-三个开关：
+现在做成：**HTML 壳留在 Pages（几十 KB），代码与模型全部走 jsDelivr**（同一个 GitHub
+仓库，零迁移、零构建）。实测 `fastly.jsdelivr.net` 拉 `Arsenal.glb` 2.2–4.5 MB/s，
+`three.module.js` 经 brotli 后只传 261 KB。冷启动 **5–13 秒**，热启动 1–2 秒。
+
+### 三种打开方式
+
+| 方式 | 怎么做 | 说明 |
+| --- | --- | --- |
+| **在线** | 直接把上面那个 `github.io` 地址发过去 | 需要能连 jsDelivr |
+| **本机直接双击** | 双击 `index.html`（`file://` 协议） | **不装 Python、不装 Node、不起服务器**，资源自动走 CDN |
+| **本机起服务** | 双击 `启动服务器.bat` → `127.0.0.1:8141` | 完全断网可用，录屏首选 |
+
+> `file://` 能跑是因为 `index.html` 里没有一行静态的 `<link>` / `<script src>` ——
+> 全部由 `<head>` 里那段脚本在运行时挂载。
+
+### 打不开怎么定位：`DIAG.html`
+
+**<https://ch2571875057-ux.github.io/emirates-concert-venue/DIAG.html>**
+
+让别人在那台机器上打开这个页面，**整页截图发回来**即可。它零依赖、不加载 three，
+只查三件事：
+
+1. **浏览器**：UA、内核版本、**是否支持 import map**（Chrome/Edge 89+、Safari 16.4+；
+   微信内置浏览器、QQ 兼容模式、IE 都不支持，会直接白屏）
+2. **资源节点**：四个 jsDelivr 镜像逐个探测（8 秒超时），报「好 · Nms」或「不通 · 原因」
+3. **站点入口**：本站 `github.io`、`raw.githubusercontent.com`、`api.github.com`
+
+页面底部会给一句结论，比如「浏览器没问题，资源节点也通了（最快：jsd.onmicrosoft.cn 478ms）」
+或者「四个资源节点一个都连不上，这台机器的网络把 jsDelivr 全系列都拦了」。
+
+### 实现（`index.html` `<head>` 里的一段脚本，约 150 行）
+
+启动时按顺序做：
+
+1. **探测**四个 CDN 镜像（`fastly` → `jsdelivr` → `onms` → `jsdmirror`），
+   各拉 `js/wavefx.js`（2 KB）测速，单个 2.5 秒超时，整体 3.2 秒硬兜底；
+   第一个通的直接用，全不通就回退同源（Pages，慢但一定打得开）。
+2. **插 `<base href>`** 指向选中的节点，让 `js/data.js` 里的 `./assets/*.glb` 相对路径自动跟随。
+3. **运行时生成 import map** —— 这是关键。`<script type="importmap">` 是**静态解析**的，
+   `<base>` 改不了它的解析基准，写成静态标签的话 `three` 与 `three/addons/*`（1.3 MB）
+   仍会从 Pages 拉。改成 `document.createElement('script')` 再 `textContent = JSON.stringify({...})`，
+   `imports` 里写**绝对 URL**，才真正全走 CDN。
+4. **动态挂载** `styles.css` 与 `js/app.js` —— 同理，HTML `<link>` / `<script src>` 在预扫描阶段
+   就被预取了，那时 `<base>` 还不存在，这两项会漏回本机。
+
+### 三个开关（都是 query 参数）
 
 | 参数 | 作用 |
 | --- | --- |
 | `?cdn=off` | 强制同源（走 Pages，慢但一定打得开，用于排查） |
 | `?cdn=1` | 本地也强制走 CDN（验证 CDN 链路） |
-| `?cdn=<url>` | 换镜像，例如境内：`?cdn=https://jsd.onmicrosoft.cn/gh/ch2571875057-ux/emirates-concert-venue@main/`（实测 1.28 MB/s） |
+| `?cdn=<url>` | 换指定镜像，例如境内：`?cdn=https://jsd.onmicrosoft.cn/gh/ch2571875057-ux/emirates-concert-venue@main/` |
+| `?diag=1` | 把探测明细写进加载层（哪个节点通、各花多少毫秒） |
+
+加载层底部会显示当前用的是哪个源，形如 `fastly · 114ms` / `本站（本地）`。
+25 秒还没加载完，会自己提示换网络 / `?cdn=off` / 改本地跑。
 
 > **改完代码 push 后，jsDelivr 的 `@main` 最长要 12 小时才更新**（它按分支引用缓存）。
-> 急着看效果就临时用带 commit SHA 的地址：`?cdn=https://cdn.jsdelivr.net/gh/ch2571875057-ux/emirates-concert-venue@<sha>/`。
+> 急着看效果就临时用带 commit SHA 的地址：
+> `?cdn=https://cdn.jsdelivr.net/gh/ch2571875057-ux/emirates-concert-venue@<sha>/`。
 
 > 例外：音频（`.m4a`）在 jsDelivr 会被 301 到 `raw.githubusercontent.com`（约 36–49 KB/s），
 > 但本项目音频码率只有 ~8.7 KB/s（41 秒 360 KB），流式播放完全跟得上，实测点开即出声。
@@ -246,7 +292,9 @@ msedge --headless=new --enable-unsafe-swiftshader \
 ```
 STORYBOARD.md   分镜脚本：录制镜头表 / 录屏工作流 / 已知坑（由 tools/storyboard.mjs 生成）
 STORYBOARD.html 排镜台：一镜一卡，可跳转 / 计时 / 打勾（同上，生成物）
-index.html      页面骨架 + import map + HUD
+DIAG.html       打不开时的自检页：查浏览器内核 / 四个 CDN 节点 / 站点入口，零依赖
+index.html      页面骨架 + HUD + 在线版引导脚本（探测 CDN、运行时挂 import map、
+                动态挂载 styles.css 与 js/app.js，见「在线版」一节）
 styles.css      视觉系统
 js/app.js       渲染循环、相机补间、时间/氛围驱动、UI 状态机、右侧歌单、QA 参数
 js/stadium.js   改造与设备层：convertGLB（删球门/删照片地面/换程序化地面）

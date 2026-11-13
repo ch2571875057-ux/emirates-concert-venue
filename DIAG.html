@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>打不开？先跑这个自检 · 酋长球场</title>
+<style>
+  :root { --bg:#0a0e18; --fg:#dfe8ff; --dim:#8fa0c5; --ok:#63d98b; --bad:#ff7d7d; --warn:#ffc861; --line:rgba(120,160,255,.22); }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; padding:28px 20px 60px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: .5px; }
+  .lede { color: var(--dim); font-size: 13px; margin: 0 0 22px; }
+  .lede b { color: var(--fg); }
+  section { border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin: 0 0 14px; background: rgba(12,16,28,.6); }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--ok); letter-spacing: .4px; }
+  .row { display:flex; gap:10px; padding: 3px 0; border-bottom: 1px dashed rgba(120,160,255,.12); }
+  .row:last-child { border-bottom: none; }
+  .k { flex: 0 0 190px; color: var(--dim); font-size: 12.5px; }
+  .v { flex: 1 1 auto; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; word-break: break-all; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  #verdict { border-width: 2px; }
+  #verdict h2 { color: var(--fg); font-size: 15px; }
+  #verdict p { margin: 6px 0 0; font-size: 13.5px; }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 8px; }
+  button { background: rgba(111,168,255,.16); color: var(--fg); border:1px solid var(--line); border-radius:7px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+  button:hover { background: rgba(111,168,255,.28); }
+  code { background: rgba(111,168,255,.12); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>打不开？先跑这个自检</h1>
+  <p class="lede">这个页面不加载游戏本体，只测网络和浏览器。跑完把整页截图发回来，就能定位是<b>哪一环</b>断了。</p>
+
+  <section id="verdict">
+    <h2>结论</h2>
+    <p id="verdict-text">正在检测…</p>
+  </section>
+
+  <section>
+    <h2>浏览器</h2>
+    <div id="env"></div>
+  </section>
+
+  <section>
+    <h2>资源节点（能下到游戏文件的地址）</h2>
+    <div id="nodes"></div>
+    <p class="hint">标记「好」的节点任意一个通，游戏就能打开。全都不通 = 这台机器的网络把这几个域名都拦了。</p>
+  </section>
+
+  <section>
+    <h2>站点入口（放 HTML 的地方）</h2>
+    <div id="entries"></div>
+  </section>
+
+  <p><button onclick="location.reload()">重新检测</button></p>
+</div>
+
+<script>
+(function () {
+  var OWNER = 'ch2571875057-ux', REPO = 'emirates-concert-venue';
+  var PROBE = 'js/wavefx.js';
+  var NODES = [
+    { id: 'fastly.jsdelivr.net', url: 'https://fastly.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
+    { id: 'cdn.jsdelivr.net', url: 'https://cdn.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
+    { id: 'jsd.onmicrosoft.cn', url: 'https://jsd.onmicrosoft.cn/gh/' + OWNER + '/' + REPO + '@main/' },
+    { id: 'cdn.jsdmirror.com', url: 'https://cdn.jsdmirror.com/gh/' + OWNER + '/' + REPO + '@main/' }
+  ];
+  var ENTRIES = [
+    { id: 'github.io（本站）', url: location.origin + '/' },
+    { id: 'raw.githubusercontent.com', url: 'https://raw.githubusercontent.com/' + OWNER + '/' + REPO + '/main/index.html' },
+    { id: 'api.github.com', url: 'https://api.github.com/repos/' + OWNER + '/' + REPO }
+  ];
+  var results = { env: {}, nodes: [], entries: [] };
+
+  function row(host, k, v, cls) {
+    var d = document.createElement('div');
+    d.className = 'row';
+    d.innerHTML = '<span class="k"></span><span class="v ' + (cls || '') + '"></span>';
+    d.children[0].textContent = k;
+    d.children[1].textContent = v;
+    host.appendChild(d);
+  }
+
+  function supportsImportMap() {
+    return !!(window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('importmap'));
+  }
+
+  function probe(url) {
+    return new Promise(function (resolve) {
+      var t0 = performance.now();
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return; done = true;
+        if (ctl) { try { ctl.abort(); } catch (e) {} }
+        resolve({ ok: false, ms: 8000, why: '超时（8 秒没响应）' });
+      }, 8000);
+      fetch(url, { mode: 'cors', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+        .then(function (r) {
+          if (done) return; done = true; clearTimeout(timer);
+          resolve({ ok: r.ok, ms: Math.round(performance.now() - t0), why: r.ok ? '正常' : 'HTTP ' + r.status });
+        })
+        .catch(function (e) {
+          if (done) return; done = true; clearTimeout(timer);
+          var n = (e && e.name) || '失败';
+          resolve({ ok: false, ms: Math.round(performance.now() - t0), why: n === 'TimeoutError' ? '超时' : (n === 'TypeError' ? '连不上（被拦或 DNS 解析失败）' : n) });
+        });
+    });
+  }
+
+  // ---- 浏览器环境 ----
+  var ua = navigator.userAgent;
+  var isEdge = /Edg\//.test(ua), isChrome = /Chrome\//.test(ua) && !isEdge, isSafari = /Safari\//.test(ua) && !/Chrome\//.test(ua);
+  var isWeChat = /MicroMessenger/.test(ua), isQQ = /QQBrowser/.test(ua) || /\bQQ\//.test(ua);
+  var isOldIE = /MSIE|Trident/.test(ua);
+  var imOk = supportsImportMap();
+
+  var envHost = document.getElementById('env');
+  row(envHost, '浏览器', (isEdge ? 'Edge ' : isChrome ? 'Chrome ' : isSafari ? 'Safari ' : '其他 ') + (ua.match(/(?:Edg|Chrome|Version)\/([\d.]+)/) || [, '?'])[1], '');
+  row(envHost, '系统', (/Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS/.test(ua) ? 'macOS' : '未知'), '');
+  row(envHost, '支持 import map', imOk ? '是' : '否 ← 这是打不开的直接原因', imOk ? 'ok' : 'bad');
+  row(envHost, '内嵌浏览器', (isWeChat ? '微信内核 ← 建议用系统浏览器打开' : isQQ ? 'QQ 浏览器内核（可能不支持）' : isOldIE ? 'IE 内核 ← 一定打不开' : '否'), (isWeChat || isQQ || isOldIE) ? 'warn' : 'ok');
+  row(envHost, '屏幕', screen.width + '×' + screen.height + '（缩放 ' + (window.devicePixelRatio || 1) + 'x）', '');
+  row(envHost, '当前地址', location.href, '');
+
+  results.env = { ua: ua, importmap: imOk, wechat: isWeChat, qq: isQQ, ie: isOldIE };
+
+  // ---- 节点 ----
+  var nodeHost = document.getElementById('nodes');
+  NODES.forEach(function (n) { row(nodeHost, n.id, '检测中…', ''); });
+  var nodeEls = nodeHost.querySelectorAll('.v');
+
+  var entryHost = document.getElementById('entries');
+  ENTRIES.forEach(function (n) { row(entryHost, n.id, '检测中…', ''); });
+  var entryEls = entryHost.querySelectorAll('.v');
+
+  var pending = NODES.length + ENTRIES.length;
+  function tick() { if (--pending === 0) verdict(); }
+
+  NODES.forEach(function (n, i) {
+    probe(n.url + PROBE).then(function (r) {
+      results.nodes.push({ id: n.id, ok: r.ok, ms: r.ms, why: r.why });
+      var el = nodeEls[i];
+      el.textContent = (r.ok ? '好 · ' : '不通 · ') + r.ms + 'ms' + (r.ok ? '' : ' · ' + r.why);
+      el.className = 'v ' + (r.ok ? (r.ms < 2000 ? 'ok' : 'warn') : 'bad');
+      tick();
+    });
+  });
+
+  ENTRIES.forEach(function (n, i) {
+    probe(n.url).then(function (r) {
+      results.entries.push({ id: n.id, ok: r.ok, ms: r.ms, why: r.why });
+      var el = entryEls[i];
+      el.textContent = (r.ok ? '通 · ' : '不通 · ') + r.ms + 'ms' + (r.ok ? '' : ' · ' + r.why);
+      el.className = 'v ' + (r.ok ? 'ok' : 'bad');
+      tick();
+    });
+  });
+
+  function verdict() {
+    var good = results.nodes.filter(function (r) { return r.ok; }).sort(function (a, b) { return a.ms - b.ms; });
+    var p = document.getElementById('verdict-text');
+    var lines = [];
+    if (!imOk) {
+      lines.push('这台机器的浏览器不支持 import map，任何 CDN 都救不了 —— 请换 Chrome / Edge 89+ / Safari 16.4+，或者用电脑本地跑（双击「启动服务器.bat」）。');
+    } else if (good.length) {
+      lines.push('浏览器没问题，资源节点也通了（最快：' + good[0].id + ' ' + good[0].ms + 'ms）。');
+      lines.push('如果游戏还是打不开，那是页面本身的问题，把整页截图发回来即可。');
+    } else {
+      lines.push('浏览器没问题，但四个资源节点一个都连不上 —— 这台机器的网络把 jsDelivr 全系列都拦了。');
+      lines.push('可行的办法：① 换成手机热点再试；② 在电脑上用「启动服务器.bat」本地看；③ 把这个项目文件夹拷过去本地跑。');
+    }
+    var entryOk = results.entries.filter(function (r) { return r.ok; }).length;
+    if (entryOk === 0) lines.push('另外：连本站 github.io 都不通，说明这台机器访问 GitHub 整个系列都困难 —— 建议直接本地跑。');
+    p.textContent = '';
+    lines.forEach(function (t) {
+      var d = document.createElement('p');
+      d.textContent = t;
+      p.appendChild(d);
+    });
+    p.parentNode.style.borderColor = (imOk && good.length) ? 'rgba(99,217,139,.5)' : 'rgba(255,125,125,.5)';
+  }
+})();
+</script>
+</body>
+</html>

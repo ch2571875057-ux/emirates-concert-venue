@@ -5,35 +5,201 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>酋长球场 · 演唱会场馆</title>
 <script>
-// 线上版资源基址：GitHub Pages 出口带宽被限到 ~36 KB/s，首屏 5.7 MB 模型要三分钟以上。
-// 本机 127.0.0.1 / localhost 不注入，保持零依赖、断网可跑。
-// ?cdn=off 强制同源（慢但一定打得开）；?cdn=<url> 换镜像；?cdn=1 强制走默认 CDN。
+/* 在线版资源基址
+   Pages 出口实测只有 19–45 KB/s，首屏 7.5 MB 要三分钟以上，所以并行探测几个 CDN，
+   用最快那个；都不通就同源回退（慢但还能开）。本机 127.0.0.1 / localhost 直接同源，
+   保持零依赖、断网可跑。
+   开关：?cdn=off 强制同源 · ?cdn=1 本地也走 CDN · ?cdn=<url> 指定镜像 · ?diag=1 显示探测详情 */
 (function () {
-  var DEF = 'https://cdn.jsdelivr.net/gh/ch2571875057-ux/emirates-concert-venue@main/';
+  var OWNER = 'ch2571875057-ux';
+  var REPO = 'emirates-concert-venue';
+  var CANDIDATES = [
+    { id: 'fastly', url: 'https://fastly.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
+    { id: 'jsdelivr', url: 'https://cdn.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
+    { id: 'onms', url: 'https://jsd.onmicrosoft.cn/gh/' + OWNER + '/' + REPO + '@main/' },
+    { id: 'jsdmirror', url: 'https://cdn.jsdmirror.com/gh/' + OWNER + '/' + REPO + '@main/' }
+  ];
+  var PROBE = 'js/wavefx.js';
+  var PROBE_MS = 2500;
+  var HARD_MS = 3200;
+  var V_CSS = 'styles.css?v=6';
+  var V_APP = 'js/app.js?v=28';
+
   var q = new URLSearchParams(location.search);
   var opt = q.get('cdn');
-  if (opt === 'off') { window.__assetBase = location.origin + '/'; return; }
-  var h = location.hostname;
-  var isLocal = (h === '127.0.0.1' || h === 'localhost' || h === '');
-  if (!opt && isLocal) { window.__assetBase = location.href; return; }
-  var b = document.createElement('base');
-  b.href = (opt && opt !== '1') ? opt : DEF;
-  document.head.appendChild(b);
-  window.__assetBase = document.baseURI;
-})();
-</script>
-<script>
-// 样式与入口也动态挂载：<link>/<script src> 会在 HTML 预扫描阶段就按同源地址预取，
-// 那时 <base> 还没插入，等于白改。动态创建才能吃到 __assetBase。
-(function () {
-  var css = document.createElement('link');
-  css.rel = 'stylesheet';
-  css.href = 'styles.css?v=5';
-  document.head.appendChild(css);
-  var app = document.createElement('script');
-  app.type = 'module';
-  app.src = 'js/app.js?v=27';
-  document.head.appendChild(app);
+  var host = location.hostname;
+  // file:// 打开时 hostname 是空串，但它并不是「本机服务器」——那种情况必须走 CDN，否则相对路径全废
+  var isFile = location.protocol === 'file:';
+  var isLocal = !isFile && (host === '127.0.0.1' || host === 'localhost' || host === '0.0.0.0' || host === '');
+  var diag = q.get('diag') === '1';
+
+  window.__net = { source: null, base: null, probes: [], note: '' };
+  var probes = window.__net.probes;
+
+  function supportsImportMap() {
+    return !!(window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('importmap'));
+  }
+
+  // importmap 是静态解析的：<base> 改了相对路径也救不了它，必须按最终基址动态生成。
+  function mount(base) {
+    base = base || location.origin + location.pathname.replace(/[^/]*$/, '');
+    var im = document.createElement('script');
+    im.type = 'importmap';
+    im.textContent = JSON.stringify({
+      imports: {
+        'three': base + 'vendor/three.module.js',
+        'three/addons/': base + 'vendor/jsm/'
+      }
+    });
+    document.head.appendChild(im);
+
+    // <link>/<script src> 走 HTML 预扫描会按同源地址预取，那时 base 还没插入，必须动态创建。
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = V_CSS;
+    document.head.appendChild(css);
+    var app = document.createElement('script');
+    app.type = 'module';
+    app.src = V_APP;
+    document.head.appendChild(app);
+  }
+
+  function useBase(url, label) {
+    var b = document.createElement('base');
+    b.href = url;
+    document.head.appendChild(b);
+    window.__assetBase = document.baseURI;
+    window.__assetSource = label;
+    window.__net.source = label;
+    window.__net.base = url;
+    mount(url);
+    // 探测是异步的，DOMContentLoaded 可能已经过去了，这里补一次标签刷新
+    var src = document.getElementById('loading-src');
+    if (src) src.textContent = label;
+    if (diag) {
+      var sub = document.querySelector('.loading-sub');
+      if (sub) sub.textContent = probes.length
+        ? probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms' : r.why); }).join(' · ')
+        : label;
+    }
+  }
+
+  function probeOne(c) {
+    return new Promise(function (resolve) {
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var t0 = performance.now();
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        if (ctl) { try { ctl.abort(); } catch (e) {} }
+        resolve({ id: c.id, ok: false, ms: PROBE_MS, why: '超时' });
+      }, PROBE_MS);
+      fetch(c.url + PROBE, { mode: 'cors', cache: 'force-cache', signal: ctl ? ctl.signal : undefined })
+        .then(function (r) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({ id: c.id, ok: r.ok, ms: Math.round(performance.now() - t0), why: r.ok ? 'ok' : 'HTTP ' + r.status });
+        })
+        .catch(function (e) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({ id: c.id, ok: false, ms: Math.round(performance.now() - t0), why: (e && e.name) || '连接失败' });
+        });
+    });
+  }
+
+  // 本机 / 显式同源：不探测
+  if (!opt && isLocal) {
+    window.__assetBase = location.href;
+    window.__assetSource = '本站（本地）';
+    window.__net.source = '本站（本地）';
+    mount(location.origin + location.pathname.replace(/[^/]*$/, ''));
+  } else if (opt === 'off') {
+    window.__assetBase = location.origin + '/';
+    window.__assetSource = '本站（同源）';
+    window.__net.source = '本站（同源）';
+    mount(location.origin + '/');
+  } else if (opt && opt !== '1') {
+    var u = opt.charAt(opt.length - 1) === '/' ? opt : opt + '/';
+    useBase(u, '自定义 ' + u.replace(/^https?:\/\//, '').split('/')[0]);
+  } else {
+    var list = (opt === '1') ? [CANDIDATES[1]] : CANDIDATES;
+    var settled = false, done = 0;
+
+    function finish(fallback) {
+      if (settled) return;
+      settled = true;
+      var ok = probes.filter(function (r) { return r.ok; }).sort(function (a, b) { return a.ms - b.ms; });
+      if (fallback || !ok.length) {
+        window.__net.note = '所有 CDN 都不可达，已回退同源（GitHub Pages 出口被限速，可能要等几分钟）';
+        useBase(location.origin + '/', '本站回退');
+        return;
+      }
+      var best = ok[0], hit = null;
+      for (var i = 0; i < list.length; i++) if (list[i].id === best.id) hit = list[i];
+      useBase(hit.url, hit.id + ' · ' + best.ms + 'ms');
+    }
+
+    setTimeout(function () { finish(true); }, HARD_MS);
+    list.forEach(function (c) {
+      probeOne(c).then(function (r) {
+        probes.push(r);
+        done++;
+        if (!settled && r.ok) finish(false);
+        else if (!settled && done === list.length) finish(true);
+      });
+    });
+  }
+
+  // ---- 加载层诊断：出问题时把原因直接写在屏幕上，别让人对着黑屏猜 ----
+  function overlay(lines) {
+    var err = document.getElementById('loading-error');
+    if (err) err.textContent = lines.join('\n');
+    var sub = document.querySelector('.loading-sub');
+    if (sub) sub.textContent = '打不开？看下面的说明';
+  }
+
+  window.addEventListener('DOMContentLoaded', function () {
+    var src = document.getElementById('loading-src');
+    if (src && window.__net.source) src.textContent = window.__net.source;
+
+    if (!supportsImportMap()) {
+      overlay([
+        '[浏览器不支持 import map]',
+        '请用 Chrome / Edge 89+ 或 Safari 16.4+ 打开；',
+        'Windows 自带的旧版 IE / 360 兼容模式、QQ 浏览器兼容内核都不行。',
+        '也可以直接双击项目里的「启动服务器.bat」在本机看，不依赖浏览器版本之外的任何东西。'
+      ]);
+      return;
+    }
+
+    if (diag) {
+      var sub = document.querySelector('.loading-sub');
+      if (sub) {
+        sub.textContent = probes.length
+          ? probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms' : r.why); }).join(' · ')
+          : (window.__net.source || '');
+      }
+      return;
+    }
+
+    setTimeout(function () {
+      var l = document.getElementById('loading');
+      if (l && l.classList.contains('done')) return;
+      var lines = ['加载超过 25 秒还没完成。'];
+      if (window.__net.note) lines.push(window.__net.note);
+      if (probes.length) {
+        lines.push('节点探测：' + probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms' : r.why); }).join(' / '));
+      }
+      lines.push('可以试：① 换手机热点或别的网络再打开；');
+      lines.push('② 地址后面加 ?cdn=off 强制同源（慢但一定能跑）；');
+      lines.push('③ 在本机双击「启动服务器.bat」，用 127.0.0.1:8141 看。');
+      overlay(lines);
+    }, 25000);
+  });
 })();
 </script>
 </head>
@@ -44,6 +210,7 @@
   <div class="loading-card">
     <div class="loading-title">酋长球场 · 演唱会场馆</div>
     <div class="loading-sub">正在载入球场模型…</div>
+    <div id="loading-src"></div>
     <div class="loading-bar"><div id="loading-fill"></div></div>
     <div id="loading-pct">0%</div>
     <div id="loading-error"></div>
@@ -100,14 +267,6 @@
 </script>
 
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "./vendor/three.module.js",
-    "three/addons/": "./vendor/jsm/"
-  }
-}
-</script>
 <script>
 // 收起/展开按钮：内联绑定，模型加载前即可用（不依赖 app.js）
 window.addEventListener('DOMContentLoaded', function () {
