@@ -59,8 +59,7 @@
     if (el) el.textContent += msg + '\n';
   }
   window.addEventListener('error', function (e) {
-    var st = e.error && e.error.stack ? e.error.stack.split('
-').slice(1, 4).join(' | ') : '';
+    var st = e.error && e.error.stack ? e.error.stack.split('\n').slice(1, 4).join(' | ') : '';
     report('[error] ' + (e.message || e.error) + ' @ ' + (e.filename || '').split('/').pop() + ':' + (e.lineno || '') + ' :: ' + st);
   });
   window.addEventListener('unhandledrejection', function (e) {

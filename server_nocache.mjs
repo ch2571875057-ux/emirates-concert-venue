@@ -42,6 +42,12 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
+  // 歌单音频：m4a 是 Apple 试听片段的容器（ISO BMFF + AAC）
+  '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.aac': 'audio/aac',
+  '.wav': 'audio/wav',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
@@ -58,6 +64,32 @@ function send(res, code, body, extra) {
   res.end(body);
 }
 const plain = { 'Content-Type': 'text/plain; charset=utf-8' };
+
+// 解析 Range 头。只支持单区间的 "bytes=a-b" / "bytes=a-" / "bytes=-n"，
+// 这已经覆盖浏览器播放音频/视频时的全部实际用法；多区间直接忽略（回 200 全量）。
+function parseRange(header, size) {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m) return null;
+  const [, rawStart, rawEnd] = m;
+  if (rawStart === '' && rawEnd === '') return null;
+  let start;
+  let end;
+  if (rawStart === '') {
+    // 后缀区间：bytes=-500 表示最后 500 字节
+    const n = Number(rawEnd);
+    if (!Number.isFinite(n) || n <= 0) return { unsatisfiable: true };
+    start = Math.max(0, size - n);
+    end = size - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd === '' ? size - 1 : Number(rawEnd);
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return { unsatisfiable: true };
+  if (start > end || start >= size) return { unsatisfiable: true };
+  if (end >= size) end = size - 1;
+  return { start, end };
+}
 
 const server = http.createServer((req, res) => {
   let pathname;
@@ -77,11 +109,42 @@ const server = http.createServer((req, res) => {
   fs.stat(filePath, (err, st) => {
     if (err || !st.isFile()) return send(res, 404, '404 ' + pathname + '\n', plain);
     const type = MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    const size = st.size;
+
     if (req.method === 'HEAD') {
-      res.writeHead(200, { ...NO_CACHE, 'Content-Type': type, 'Content-Length': st.size });
+      res.writeHead(200, {
+        ...NO_CACHE, 'Content-Type': type, 'Content-Length': size, 'Accept-Ranges': 'bytes',
+      });
       return res.end();
     }
-    res.writeHead(200, { ...NO_CACHE, 'Content-Type': type, 'Content-Length': st.size });
+
+    // 音频/视频播放器会先发 Range 探测，必须回 206，否则 Safari/iOS 直接不播
+    const range = parseRange(req.headers.range, size);
+    if (range && range.unsatisfiable) {
+      res.writeHead(416, {
+        ...NO_CACHE, 'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Range': `bytes */${size}`, 'Accept-Ranges': 'bytes',
+      });
+      return res.end('416 range not satisfiable\n');
+    }
+
+    if (range) {
+      const len = range.end - range.start + 1;
+      res.writeHead(206, {
+        ...NO_CACHE,
+        'Content-Type': type,
+        'Content-Length': len,
+        'Content-Range': `bytes ${range.start}-${range.end}/${size}`,
+        'Accept-Ranges': 'bytes',
+      });
+      const stream = fs.createReadStream(filePath, { start: range.start, end: range.end });
+      stream.on('error', () => res.destroy());
+      return stream.pipe(res);
+    }
+
+    res.writeHead(200, {
+      ...NO_CACHE, 'Content-Type': type, 'Content-Length': size, 'Accept-Ranges': 'bytes',
+    });
     const stream = fs.createReadStream(filePath);
     stream.on('error', () => res.destroy());
     stream.pipe(res);

@@ -713,10 +713,22 @@ const VIEW_ICONS = {
 
 // ---------- 右侧歌单 ----------
 // 歌单只做展示：点一条不改变演出，只高亮当前曲目并把曲名写到舞台副屏（纯 UI，不进渲染循环）
+// 播放按钮单独走：只读 assets/audio/ 里的音频，不参与渲染循环，也不影响演出状态机
 let playlistBuilt = false;
 let currentSong = 0;
 let songChosen = -1;        // 用户主动选过的曲目（-1 = 从未选过，开场秀结束后不抢文案）
 let _showWasActive = false; // 开场秀→结束的边沿检测
+
+// 单例 <audio>：同一时刻只可能有一首在播；preload=none 保证 4 MB 素材不点就不下载
+const audioEl = new Audio();
+audioEl.preload = 'none';
+let playingIdx = -1;        // 正在播放的曲目下标（-1 = 没在播）
+// 每次切歌/暂停都 +1。play() 返回的 Promise 在被 pause() 中断时会 reject
+// （AbortError），不加这个令牌就会把后一首的状态误清成“未播放”。
+let playToken = 0;
+
+// 歌名取用统一走这里：songs 是对象数组，散落 .songs[i] 直接拼字符串会变成 [object Object]
+const songTitle = (i) => (DATA.playlist?.songs?.[i] || {}).title || '';
 
 function buildPlaylist() {
   const PL = DATA.playlist;
@@ -726,24 +738,40 @@ function buildPlaylist() {
   document.getElementById('pl-sub').textContent = PL.sub || '';
   const foot = document.getElementById('pl-foot');
   const items = [];
-  PL.songs.forEach((name, i) => {
+  const plays = [];
+  PL.songs.forEach((song, i) => {
     const li = document.createElement('li');
     li.className = 'pl-item';
     li.dataset.idx = i;
     const num = document.createElement('span');
     num.className = 'pl-idx';
     num.textContent = String(i + 1).padStart(2, '0');
+    // 播放按钮：点它同时选曲（副屏写字）并播放；没有音源的曲目禁用并标「暂缺」
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'pl-play';
+    play.textContent = '▶';
+    play.setAttribute('aria-label', `播放 ${song.title}`);
+    if (song.missing) {
+      play.disabled = true;
+      play.textContent = '—';
+      play.title = '暂无官方试听';
+      li.classList.add('missing');
+    }
+    play.onclick = (e) => { e.stopPropagation(); selectSong(i); playSong(i); };
     const txt = document.createElement('span');
     txt.className = 'pl-name-txt';
-    txt.textContent = name;
+    txt.textContent = song.title || song.id || '';
     const dot = document.createElement('span');
     dot.className = 'pl-dot';
-    li.append(num, txt, dot);
+    li.append(num, play, txt, dot);
     li.onclick = () => selectSong(i);
     list.appendChild(li);
     items.push(li);
+    plays.push(play);
   });
   playlistItems = items;
+  playBtns = plays;
   selectSong(0, true);
   if (Q.get('pl') === 'collapsed') {
     document.getElementById('playlist').classList.add('collapsed');
@@ -754,9 +782,9 @@ function buildPlaylist() {
   function selectSong(i, silent) {
     currentSong = i;
     items.forEach((el, k) => el.classList.toggle('active', k === i));
-    foot.textContent = `${String(i + 1).padStart(2, '0')} / ${String(PL.songs.length).padStart(2, '0')} · ${PL.songs[i]}`;
+    foot.textContent = `${String(i + 1).padStart(2, '0')} / ${String(PL.songs.length).padStart(2, '0')} · ${songTitle(i)}`;
     // 只在用户主动点击时把曲目打到舞台副屏；首次静默构建保持场景默认文案不动
-    if (!silent) { songChosen = i; paintSongOnStage(i); toast(`曲目 ${i + 1} · ${PL.songs[i]}`); }
+    if (!silent) { songChosen = i; paintSongOnStage(i); toast(`曲目 ${i + 1} · ${songTitle(i)}`); }
   }
   return { select: selectSong };
 }
@@ -768,7 +796,7 @@ function paintSongOnStage(i) {
   const mats = stadiumGroup?.userData?.stageGroup?.userData?.waveTextMats || [];
   if (!mats.length) return;
   // 副屏只写歌名（不带序号）：序号在左侧歌单里已经能看到，屏幕上留更多空间给字
-  const label = PL.songs[i];
+  const label = songTitle(i);
   // 歌名比默认大标题长，且文字层贴在浪体卷边上（两侧会转离镜头）。
   // fit:true 打开自动排版：放不下就折两行，仍超宽才降字号，保证歌名完整可读。
   for (const m of mats) {
@@ -777,6 +805,66 @@ function paintSongOnStage(i) {
   }
 }
 let playlistItems = [];
+let playBtns = [];
+
+// 播放状态同步到 DOM：只切 .playing 类与按钮符号，不碰音频本身
+function setPlayingUI(i, pending) {
+  playlistItems.forEach((el, k) => el.classList.toggle('playing', k === i));
+  playBtns.forEach((btn, k) => {
+    if (btn.disabled) return;
+    // pending：已经开始拉流（大文件要 1~2 s），这时显示…而不是⏸，避免“点了没声音”
+    btn.textContent = k === i ? (pending ? '…' : '⏸') : '▶';
+    btn.setAttribute('aria-label', `${k === i ? '暂停' : '播放'} ${songTitle(k)}`);
+  });
+}
+
+// 点播放按钮：同一首再点 = 暂停并复位；否则换源播放
+function playSong(i) {
+  const PL = DATA.playlist;
+  const song = PL?.songs?.[i];
+  if (!song) return;
+
+  if (playingIdx === i) {
+    playToken++;
+    audioEl.pause();
+    playingIdx = -1;
+    setPlayingUI(-1);
+    return;
+  }
+  if (song.missing) { toast('这首暂无官方试听'); return; }
+
+  const token = ++playToken;
+  audioEl.pause();
+  audioEl.src = (PL.audioDir || '') + song.file;
+  audioEl.currentTime = 0;
+  const p = audioEl.play();
+  if (p && p.catch) {
+    p.catch((err) => {
+      if (token !== playToken) return;                       // 已被后续点击取代，不要回写状态
+      if (err && err.name === 'AbortError') return;          // 自己 pause 引起的中断，不是失败
+      if (playingIdx !== i) return;
+      playingIdx = -1;
+      setPlayingUI(-1);
+      toast('音频加载失败');
+    });
+  }
+  playingIdx = i;
+  setPlayingUI(i, !audioEl.readyState ? true : audioEl.paused);
+}
+
+// 真正出声时把…换回 ⏸（广告片断不会在这里复位，因为 onended/onerror 各自处理）
+audioEl.addEventListener('playing', () => {
+  if (playingIdx >= 0) setPlayingUI(playingIdx);
+});
+
+// 播完 / 读不到文件都要复位，否则按钮会一直停在 ⏸
+audioEl.onended = () => { playingIdx = -1; setPlayingUI(-1); };
+audioEl.onerror = () => {
+  if (playingIdx < 0) return;
+  playingIdx = -1;
+  setPlayingUI(-1);
+  toast('音频加载失败');
+};
 
 function buildHUD() {
   const box = document.getElementById('hud-groups');
@@ -1306,4 +1394,29 @@ window.__app = {
   get playlist() { return DATA.playlist; },
   get songIndex() { return currentSong; },
   selectSong: (i) => { const el = playlistItems[i]; if (el) el.click(); },
+  // 音频：headless 验收需要读真实播放状态（paused / currentSrc / playingIndex）
+  get audio() { return audioEl; },
+  get playingIndex() { return playingIdx; },
+  playSong: (i) => playSong(i),
+  // 全息投影：headless 验收需要读姿态 / 世界坐标 / 不透明度，并能强制切换姿态
+  get holo() { return holoGroup; },
+  get holoPose() { return holoGroup ? holoGroup.userData.pose : null; },
+  get holoEnabled() { return holoEnabled; },
+  setHoloEnabled: (v) => { holoEnabled = !!v; },
+  snapHolo: (pose, t) => {
+    if (!holoGroup) return null;
+    snapHolo(holoGroup, pose, t || 0);
+    holoFreeze = true;
+    return holoGroup.userData.pose;
+  },
+  // 开场秀时间轴：外部可直接读段表、快进到任意时刻
+  get show() { return show; },
+  get showSegments() { return showSegments(); },
+  holoStepTo: (t) => {
+    if (!holoGroup) return null;
+    holoFreeze = true;
+    holoTime = t;
+    snapHolo(holoGroup, holoGroup.userData.pose, t);
+    return holoGroup.userData.pose;
+  },
 };

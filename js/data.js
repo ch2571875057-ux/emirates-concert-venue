@@ -729,15 +729,22 @@ export const DATA = {
   },
 
   // ---------- 演出歌单（右侧面板展示；数组顺序即曲目序号）----------
+  // id：稳定标识；title：显示名；file：相对 audioDir 的文件名；missing：当前没有音源
+  //
+  // 音源说明：后四首是 Apple iTunes 的 30 秒官方试听片段（见 tools/fetch_audio.mjs）。
+  // 《特别的人》是用户自备的全曲音频（41 s），不标 missing。
+  // （源文件是带视频轨的 mp4，已去掉视频轨并把 moov 前置（faststart），360 KB。）
+  // 想再换音源：自行合法获取后同名覆盖对应文件，代码无需改动。
   playlist: {
     title: '歌单',
     sub: '王俊凯 · 演唱会曲目',
+    audioDir: 'assets/audio/',
     songs: [
-      '继续给十五岁的自己',
-      '树读',
-      '疑疑疑',
-      '如期',
-      '生长',
+      { id: 'tebie', title: '特别的人', file: 'tebie.m4a' },
+      { id: 'shudu', title: '树读', file: 'shudu.m4a' },
+      { id: 'yiyiyi', title: '疑疑疑', file: 'yiyiyi.m4a' },
+      { id: 'ruqi', title: '如期', file: 'ruqi.m4a' },
+      { id: 'shengzhang', title: '生长', file: 'shengzhang.m4a' },
     ],
   },
 

@@ -1,0 +1,66 @@
+{
+  "note": "Apple iTunes 官方30秒试听片段（audio/mp4）与一首用户自备完整曲。版权归原权利人，仅供本地演示。",
+  "storefront": "TW",
+  "fetchedAt": "2026-11-11T03:54:35.675Z",
+  "tracks": [
+    {
+      "trackId": 6821825986,
+      "id": "yiyiyi",
+      "title": "疑疑疑",
+      "displayTitle": "疑疑疑",
+      "album": "WJK",
+      "fullDurationMs": 176604,
+      "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/1d/c5/77/1dc57794-d2b2-2e61-c4c2-8f3b3820bdca/mzaf_12719993073100658505.plus.aac.p.m4a",
+      "file": "yiyiyi.m4a",
+      "bytes": 961635
+    },
+    {
+      "trackId": 6821826092,
+      "id": "ruqi",
+      "title": "如期",
+      "displayTitle": "如期",
+      "album": "WJK",
+      "fullDurationMs": 288845,
+      "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/e8/7c/53/e87c538a-d0c3-c277-cc58-edef5dc565ba/mzaf_9420069978846676924.plus.aac.p.m4a",
+      "file": "ruqi.m4a",
+      "bytes": 965968
+    },
+    {
+      "trackId": 1728225082,
+      "id": "shudu",
+      "title": "树读",
+      "displayTitle": "樹讀",
+      "album": "樹讀 - Single",
+      "fullDurationMs": 236672,
+      "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/03/18/2f/03182f57-f2f3-72f2-1160-10aec5b64209/mzaf_1300402855800228965.plus.aac.p.m4a",
+      "file": "shudu.m4a",
+      "bytes": 1046207
+    },
+    {
+      "trackId": 1728239438,
+      "id": "shengzhang",
+      "title": "生长",
+      "displayTitle": "生長",
+      "album": "生長 - Single",
+      "fullDurationMs": 287012,
+      "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/d9/ce/51/d9ce51aa-b470-b6ae-ddf2-54d54db4163a/mzaf_8884629497365977272.plus.aac.p.m4a",
+      "file": "shengzhang.m4a",
+      "bytes": 1064374
+    }
+  ],
+  "missing": [],
+  "local": [
+    {
+      "id": "tebie",
+      "title": "特别的人",
+      "file": "tebie.m4a",
+      "bytes": 360552,
+      "seconds": 41.292,
+      "codec": "mp4a (ISO BMFF, 仅音频轨)",
+      "source": "用户提供的带视频轨 mp4（6,081,595 B）",
+      "transform": "去掉视频轨 + moov 前置 + 重建 stco",
+      "note": "版权归原权利人，仅供本地演示。",
+      "addedAt": "2026-11-11T10:38:31.000Z"
+    }
+  ]
+}
