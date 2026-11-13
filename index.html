@@ -19,11 +19,20 @@
     { id: 'onms', url: 'https://jsd.onmicrosoft.cn/gh/' + OWNER + '/' + REPO + '@main/' },
     { id: 'jsdmirror', url: 'https://cdn.jsdmirror.com/gh/' + OWNER + '/' + REPO + '@main/' }
   ];
-  var PROBE = 'js/wavefx.js';
+  // 探测文件不能太小：2 KB 在任何节点都在 400 ms 内返回，量不出真实吞吐。
+  // 实测 cdn.jsdmirror.com 拉 2 KB 是 396 ms（看着最快），拉 Arsenal.glb 只有 7 KB/s，
+  // 首屏 7.5 MB 就是几分钟。用 64 KB 的 crowd_a.glb 才能把「联通」和「够快」分开。
+  var PROBE = 'assets/crowd_a.glb';
+  // 四个节点并行探测，等全部回来才挑（要按优先级挑，不能谁先回就用谁）。
+  // 所以这里的超时就是首屏额外等待的上限，不能开太大。
   var PROBE_MS = 2500;
-  var HARD_MS = 3200;
+  // 门槛定得低：64 KB 的探测里 TLS 握手占了一半时间，
+  // 实测就算 3.4 MB/s 的节点也只测出 125 KB/s。这里只用来排除真坏的，
+  // 不能当成真实带宽——否则网速慢的机器会被误判成导致回退。
+  var MIN_KBS = 20;
+  var HARD_MS = 3000;    // 硬兜底必须长于 PROBE_MS，否则探测还没回来就被判失败
   var V_CSS = 'styles.css?v=6';
-  var V_APP = 'js/app.js?v=28';
+  var V_APP = 'js/app.js?v=30';
 
   var q = new URLSearchParams(location.search);
   var opt = q.get('cdn');
@@ -79,7 +88,7 @@
     if (diag) {
       var sub = document.querySelector('.loading-sub');
       if (sub) sub.textContent = probes.length
-        ? probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms' : r.why); }).join(' · ')
+        ? probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms/' + r.kbs + 'KB/s' : r.why); }).join(' · ')
         : label;
     }
   }
@@ -95,12 +104,24 @@
         if (ctl) { try { ctl.abort(); } catch (e) {} }
         resolve({ id: c.id, ok: false, ms: PROBE_MS, why: '超时' });
       }, PROBE_MS);
-      fetch(c.url + PROBE, { mode: 'cors', cache: 'force-cache', signal: ctl ? ctl.signal : undefined })
+      // 必须把 body 读完。fetch 的 Promise 在响应头到达时就 resolve，
+      // 那只是 TTFB，不代表吞吐量——之前就是这样把 7 KB/s 的节点选成了最优。
+      fetch(c.url + PROBE, { mode: 'cors', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
         .then(function (r) {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve({ id: c.id, ok: r.ok, ms: Math.round(performance.now() - t0), why: r.ok ? 'ok' : 'HTTP ' + r.status });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer().then(function (buf) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            var ms = performance.now() - t0;
+            var kbs = buf.byteLength / 1024 / (ms / 1000);
+            // 门槛：低于 MIN_KBS 就算通也不用（首屏约 7.5 MB，60 KB/s 要两分钟）
+            if (kbs < MIN_KBS) {
+              resolve({ id: c.id, ok: false, ms: Math.round(ms), kbs: Math.round(kbs), why: '太慢 ' + Math.round(kbs) + 'KB/s' });
+              return;
+            }
+            resolve({ id: c.id, ok: true, ms: Math.round(ms), kbs: Math.round(kbs), why: 'ok' });
+          });
         })
         .catch(function (e) {
           if (settled) return;
@@ -126,30 +147,45 @@
     var u = opt.charAt(opt.length - 1) === '/' ? opt : opt + '/';
     useBase(u, '自定义 ' + u.replace(/^https?:\/\//, '').split('/')[0]);
   } else {
-    var list = (opt === '1') ? [CANDIDATES[1]] : CANDIDATES;
+    // ?cdn=1 也走全量探测（用户分不清 fastly / jsdelivr，给最快的就对）；
+    // 想固定到某个镜像就用 ?cdn=<url>
+    var list = CANDIDATES;
     var settled = false, done = 0;
 
-    function finish(fallback) {
+    function finish(force) {
       if (settled) return;
       settled = true;
-      var ok = probes.filter(function (r) { return r.ok; }).sort(function (a, b) { return a.ms - b.ms; });
-      if (fallback || !ok.length) {
+      // 按固定优先级选，不按测出来的速度选。
+      // 原因：64 KB 的探测里 TLS 握手占一半时间，测出来的数字漂得厉害
+      // （同一节点连续两次：36 KB/s 和 2183 KB/s），按它排序会选到实际很慢的节点。
+      // 固定优先级反而稳：fastly 在几十次测里几乎一直是最快的。
+      var ok = probes.filter(function (r) { return r.ok; });
+      ok.sort(function (a, b) {
+        var ia = -1, ib = -1;
+        for (var j = 0; j < list.length; j++) {
+          if (list[j].id === a.id) ia = j;
+          if (list[j].id === b.id) ib = j;
+        }
+        return ia - ib;
+      });
+      if (!ok.length) {
         window.__net.note = '所有 CDN 都不可达，已回退同源（GitHub Pages 出口被限速，可能要等几分钟）';
         useBase(location.origin + '/', '本站回退');
         return;
       }
       var best = ok[0], hit = null;
       for (var i = 0; i < list.length; i++) if (list[i].id === best.id) hit = list[i];
-      useBase(hit.url, hit.id + ' · ' + best.ms + 'ms');
+      useBase(hit.url, hit.id + ' · ' + best.ms + 'ms · ' + best.kbs + 'KB/s');
     }
 
-    setTimeout(function () { finish(true); }, HARD_MS);
+    // 不能「谁先回来就用谁」——那样选的是延迟最低的，
+    // 而不是优先级最高的。等全部探测结束（或硬兜底到时）再统一挑。
+    setTimeout(function () { finish(false); }, HARD_MS);
     list.forEach(function (c) {
       probeOne(c).then(function (r) {
         probes.push(r);
         done++;
-        if (!settled && r.ok) finish(false);
-        else if (!settled && done === list.length) finish(true);
+        if (!settled && done === list.length) finish(false);
       });
     });
   }
@@ -180,7 +216,7 @@
       var sub = document.querySelector('.loading-sub');
       if (sub) {
         sub.textContent = probes.length
-          ? probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms' : r.why); }).join(' · ')
+          ? probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms/' + r.kbs + 'KB/s' : r.why); }).join(' · ')
           : (window.__net.source || '');
       }
       return;
@@ -192,7 +228,7 @@
       var lines = ['加载超过 25 秒还没完成。'];
       if (window.__net.note) lines.push(window.__net.note);
       if (probes.length) {
-        lines.push('节点探测：' + probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms' : r.why); }).join(' / '));
+        lines.push('节点探测：' + probes.map(function (r) { return r.id + ' ' + (r.ok ? r.ms + 'ms/' + r.kbs + 'KB/s' : r.why); }).join(' / '));
       }
       lines.push('可以试：① 换手机热点或别的网络再打开；');
       lines.push('② 地址后面加 ?cdn=off 强制同源（慢但一定能跑）；');
