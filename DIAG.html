@@ -60,7 +60,10 @@
 <script>
 (function () {
   var OWNER = 'ch2571875057-ux', REPO = 'emirates-concert-venue';
-  var PROBE = 'js/wavefx.js';
+  // 用 64 KB 的模型而不是 2 KB 的 js：小文件测出来的是延迟，
+  // 而首屏要下 7.5 MB，真正决定体验的是吞吐量。
+  // 必须把 body 读完，fetch 的 Promise 在响应头到达时就 resolve 了。
+  var PROBE = 'assets/crowd_a.glb';
   var NODES = [
     { id: 'fastly.jsdelivr.net', url: 'https://fastly.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
     { id: 'cdn.jsdelivr.net', url: 'https://cdn.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
@@ -99,8 +102,13 @@
       }, 8000);
       fetch(url, { mode: 'cors', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
         .then(function (r) {
-          if (done) return; done = true; clearTimeout(timer);
-          resolve({ ok: r.ok, ms: Math.round(performance.now() - t0), why: r.ok ? '正常' : 'HTTP ' + r.status });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer().then(function (buf) {
+            if (done) return; done = true; clearTimeout(timer);
+            var ms = performance.now() - t0;
+            var kbs = Math.round(buf.byteLength / 1024 / (ms / 1000));
+            resolve({ ok: true, ms: Math.round(ms), kbs: kbs, why: '正常' });
+          });
         })
         .catch(function (e) {
           if (done) return; done = true; clearTimeout(timer);
@@ -141,9 +149,9 @@
 
   NODES.forEach(function (n, i) {
     probe(n.url + PROBE).then(function (r) {
-      results.nodes.push({ id: n.id, ok: r.ok, ms: r.ms, why: r.why });
+      results.nodes.push({ id: n.id, ok: r.ok, ms: r.ms, kbs: r.kbs || 0, why: r.why });
       var el = nodeEls[i];
-      el.textContent = (r.ok ? '好 · ' : '不通 · ') + r.ms + 'ms' + (r.ok ? '' : ' · ' + r.why);
+      el.textContent = (r.ok ? '好 · ' : '不通 · ') + r.ms + 'ms' + (r.ok ? ' · ' + r.kbs + ' KB/s' : ' · ' + r.why);
       el.className = 'v ' + (r.ok ? (r.ms < 2000 ? 'ok' : 'warn') : 'bad');
       tick();
     });
@@ -160,13 +168,19 @@
   });
 
   function verdict() {
-    var good = results.nodes.filter(function (r) { return r.ok; }).sort(function (a, b) { return a.ms - b.ms; });
+    // 按主页的固定优先级排（fastly → jsdelivr → onms → jsdmirror），
+    // 不按测出来的 KB/s 排——64 KB 里 TLS 握手占一半，数字漂得厉害。
+    // 这里的结论不能与主页实际选择相矛盾。
+    var order = NODES.map(function (n) { return n.id; });
+    var good = results.nodes.filter(function (r) { return r.ok; }).sort(function (a, b) {
+      return order.indexOf(a.id) - order.indexOf(b.id);
+    });
     var p = document.getElementById('verdict-text');
     var lines = [];
     if (!imOk) {
       lines.push('这台机器的浏览器不支持 import map，任何 CDN 都救不了 —— 请换 Chrome / Edge 89+ / Safari 16.4+，或者用电脑本地跑（双击「启动服务器.bat」）。');
     } else if (good.length) {
-      lines.push('浏览器没问题，资源节点也通了（最快：' + good[0].id + ' ' + good[0].ms + 'ms）。');
+      lines.push('浏览器没问题，资源节点也通了（最快：' + good[0].id + ' ' + good[0].ms + 'ms / ' + good[0].kbs + 'KB/s）。');
       lines.push('如果游戏还是打不开，那是页面本身的问题，把整页截图发回来即可。');
     } else {
       lines.push('浏览器没问题，但四个资源节点一个都连不上 —— 这台机器的网络把 jsDelivr 全系列都拦了。');
