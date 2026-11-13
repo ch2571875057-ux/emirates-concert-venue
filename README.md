@@ -94,7 +94,7 @@ Pages 这条出口的带宽被限到约 36 KB/s（实测单连接 19–45 KB/s�
 | --- | --- |
 | `?cdn=off` | 强制同源（走 Pages，慢但一定打得开，用于排查） |
 | `?cdn=1` | 本地也强制走 CDN（验证 CDN 链路） |
-| `?cdn=<url>` | 换指定镜像，例如境内：`?cdn=https://jsd.onmicrosoft.cn/gh/ch2571875057-ux/emirates-concert-venue@main/` |
+| `?cdn=<url>` | 换指定镜像，例如境内：`?cdn=https://jsd.onmicrosoft.cn/gh/ch2571875057-ux/emirates-concert-venue@<sha>/` |
 | `?diag=1` | 把探测明细写进加载层（哪个节点通、各花多少毫秒） |
 
 加载层底部会显示当前用的是哪个源，形如 `fastly · 114ms` / `本站（本地）`。
@@ -114,9 +114,24 @@ KB/s 排序：64 KB 里 TLS 握手占一半，同一节点两次能测出 36 KB/
 另外探测**不能「谁先回来就用谁」**——那样选的是延迟最低的，而不是优先级最高的。
 所以等四个探测都回来（或 3 秒硬兜底）再统一挑，这个等待会算在首屏里。
 
-> **改完代码 push 后，jsDelivr 的 `@main` 最长要 12 小时才更新**（它按分支引用缓存）。
-> 急着看效果就临时用带 commit SHA 的地址：
-> `?cdn=https://cdn.jsdelivr.net/gh/ch2571875057-ux/emirates-concert-venue@<sha>/`。
+### 用固定 SHA，不用 `@main`
+
+CDN 基址写的是**提交 SHA**（`index.html` 里的 `var REF`），不是 `@main`。
+
+原因：jsDelivr 按分支引用缓存最长 12 小时。改完代码、Pages 也更新了，资源还从旧缓存来，
+表现为「本地好好的，线上还是老样子」—— 这次就踩了：加载层已经补上 `visibility:hidden`，
+线上仍挂旧样式，一度以为是改错了地方。
+
+固定 SHA 后每个提交的内容是确定的，也不需要等缓存过期。
+
+```
+node tools/pin_ref.mjs --check   # 只校验：REF 是 HEAD 祖先，且之后只改了 index.html
+node tools/pin_ref.mjs           # 把 REF 推到当前 HEAD
+```
+
+**发版顺序：先 commit 资源改动 → 再跑 `pin_ref` → 最后 commit `index.html`。**
+这样 REF 指向的那个提交里已经装好了最新资源。`--check` 就是按这个约定校验的，
+REF 落在 HEAD 之后再出现别的文件改动就会报错。
 
 > 例外：音频（`.m4a`）在 jsDelivr 会被 301 到 `raw.githubusercontent.com`（约 36–49 KB/s），
 > 但本项目音频码率只有 ~8.7 KB/s（41 秒 360 KB），流式播放完全跟得上，实测点开即出声。
@@ -340,7 +355,7 @@ vendor/         three@0.169.0 本地副本（MIT）
 ### 子目录约定
 
 ```
-tools/           正式工具链（19 个）
+tools/           正式工具链（20 个）
   measure_stands.mjs       看台剖面测量（生成 standProfile.js）
   export_sticks.mjs        点阵编址导出
   verify_wavefx.mjs        人浪 6 档离线断言（形状/方向/周期/边界 + 与 modes 表交叉校验）
@@ -355,6 +370,7 @@ tools/           正式工具链（19 个）
   verify_playlist.mjs      歌单契约与音频素材断言（id/文件/魔数/时长/文档一致）
   storyboard.mjs           分镜脚本（--write 生成 md+html / --check 校验 / --urls 打印地址）
   prompter-template.mjs    排镜台页面模板（被 storyboard.mjs 引用，不单独运行）
+  pin_ref.mjs              把 index.html 里 CDN 的 REF 固定到某个提交（--check 只校验）
   pixel_*.py stick_bbox.py 点阵 ASCII 与统计
   _check_self.py           三角形级射线可见性检查（README 验收用）
   _penet_final.py          摆动全程穿模检查（README 验收用）
