@@ -62,7 +62,7 @@ export function buildPrompterHtml(shots, chapters, base, showTotal) {
     '<span>已完成 <b id="cnt">0</b> / <b id="total">0</b> 镜</span>',
     '<div class="pbar"><i id="pb"></i></div>',
     '<button id="reset">清空记录</button>',
-    '<span>当前站点：<code id="site"></code></span>',
+    '<span>当前站点：<code id="site"></code><em id="site-note"></em></span>',
     '</div>',
     '</header>',
     '<div style="max-width:1180px;margin:0 auto;padding:16px 18px 0">',
@@ -84,7 +84,9 @@ export function buildPrompterHtml(shots, chapters, base, showTotal) {
     'var CHS=' + chs + ';',
     'var BASE=(function(){var p=location.pathname;'
     +'return location.origin+p.replace(/\\/[^\\/]*$/,"");})();',
-    'try{var _s=document.getElementById("site");if(_s)_s.textContent=BASE+"/";}catch(e){}',
+    'try{var _s=document.getElementById("site");if(_s)_s.textContent=BASE+"/";'
+    +'var _n=document.getElementById("site-note");'
+    +'if(_n)_n.textContent=(BASE.indexOf("//127.0.0.1")>0||BASE.indexOf("//localhost")>0?"（本地，录屏首选）":"（线上走 CDN，首屏稍慢）");}catch(e){}',
     'var SHOWTOTAL=' + JSON.stringify(showTotal) + ';',
     'var KEY="concert1.prompter.v1";',
     'var done={};try{done=JSON.parse(localStorage.getItem(KEY)||"{}")||{};}catch(e){done={};}',

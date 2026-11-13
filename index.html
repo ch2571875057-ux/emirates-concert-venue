@@ -4,7 +4,38 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>酋长球场 · 演唱会场馆</title>
-<link rel="stylesheet" href="styles.css?v=5">
+<script>
+// 线上版资源基址：GitHub Pages 出口带宽被限到 ~36 KB/s，首屏 5.7 MB 模型要三分钟以上。
+// 本机 127.0.0.1 / localhost 不注入，保持零依赖、断网可跑。
+// ?cdn=off 强制同源（慢但一定打得开）；?cdn=<url> 换镜像；?cdn=1 强制走默认 CDN。
+(function () {
+  var DEF = 'https://cdn.jsdelivr.net/gh/ch2571875057-ux/emirates-concert-venue@main/';
+  var q = new URLSearchParams(location.search);
+  var opt = q.get('cdn');
+  if (opt === 'off') { window.__assetBase = location.origin + '/'; return; }
+  var h = location.hostname;
+  var isLocal = (h === '127.0.0.1' || h === 'localhost' || h === '');
+  if (!opt && isLocal) { window.__assetBase = location.href; return; }
+  var b = document.createElement('base');
+  b.href = (opt && opt !== '1') ? opt : DEF;
+  document.head.appendChild(b);
+  window.__assetBase = document.baseURI;
+})();
+</script>
+<script>
+// 样式与入口也动态挂载：<link>/<script src> 会在 HTML 预扫描阶段就按同源地址预取，
+// 那时 <base> 还没插入，等于白改。动态创建才能吃到 __assetBase。
+(function () {
+  var css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = 'styles.css?v=5';
+  document.head.appendChild(css);
+  var app = document.createElement('script');
+  app.type = 'module';
+  app.src = 'js/app.js?v=27';
+  document.head.appendChild(app);
+})();
+</script>
 </head>
 <body>
 <div id="app"></div>
@@ -92,6 +123,5 @@ window.addEventListener('DOMContentLoaded', function () {
   };
 });
 </script>
-<script type="module" src="js/app.js?v=26"></script>
 </body>
 </html>

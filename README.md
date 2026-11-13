@@ -33,6 +33,37 @@ node server_nocache.mjs  # 没 Python 走这个
 
 依赖已全部本地化在 `vendor/`（three@0.169.0 及 addons，来自 unpkg），**断网可跑**。
 
+## 在线版（不用装任何东西，发给别人也能看）
+
+**<https://ch2571875057-ux.github.io/emirates-concert-venue/>**
+
+GitHub Pages 已经发布，但**它这条出口的带宽被限到约 36 KB/s**（实测：单连接 19–45 KB/s，
+8 并发聚合也只有 36 KB/s；首屏要约 7.5 MB，按这个速度得等三分钟以上）。所以线上版做了
+一次资源重定向：**HTML 壳留在 Pages，代码与模型全部走 jsDelivr**（同一个 GitHub 仓库，
+零迁移）。实测 `cdn.jsdelivr.net` 拉 `Arsenal.glb` 是 4.4 MB/s，`three.module.js` 经 brotli
+压缩后只传 261 KB —— 冷启动从「三分钟没完」变成 **8–13 秒**，热启动 1–2 秒。
+
+实现只有 `index.html` `<head>` 里的一段脚本：非 `127.0.0.1`/`localhost` 时插入
+`<base href="https://cdn.jsdelivr.net/gh/.../main/">`，相对路径全部自动跟随，`js/data.js`
+里一个资源地址都没改。**本地依然零依赖、断网可跑。**
+
+三个开关：
+
+| 参数 | 作用 |
+| --- | --- |
+| `?cdn=off` | 强制同源（走 Pages，慢但一定打得开，用于排查） |
+| `?cdn=1` | 本地也强制走 CDN（验证 CDN 链路） |
+| `?cdn=<url>` | 换镜像，例如境内：`?cdn=https://jsd.onmicrosoft.cn/gh/ch2571875057-ux/emirates-concert-venue@main/`（实测 1.28 MB/s） |
+
+> **改完代码 push 后，jsDelivr 的 `@main` 最长要 12 小时才更新**（它按分支引用缓存）。
+> 急着看效果就临时用带 commit SHA 的地址：`?cdn=https://cdn.jsdelivr.net/gh/ch2571875057-ux/emirates-concert-venue@<sha>/`。
+
+> 例外：音频（`.m4a`）在 jsDelivr 会被 301 到 `raw.githubusercontent.com`（约 36–49 KB/s），
+> 但本项目音频码率只有 ~8.7 KB/s（41 秒 360 KB），流式播放完全跟得上，实测点开即出声。
+
+**录屏仍建议用本地** `http://127.0.0.1:8141/` —— 线上首屏慢几秒，且 CDN 缓存会让「同一镜重录」的
+行为在 12 小时窗口内不一致。
+
 ## 看什么 / 怎么玩
 
 - **侧边栏**：全高手风琴分组侧边栏（🎥视角 / 💡灯光 / 👥观众 / 🌊人浪 / 🎤歌手 / 🎆开场秀 / ✨灯光秀 / 🎮漫游），
