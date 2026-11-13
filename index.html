@@ -13,11 +13,17 @@
 (function () {
   var OWNER = 'ch2571875057-ux';
   var REPO = 'emirates-concert-venue';
+  // 固定到提交 SHA，不用 @main。
+  // jsDelivr 的 @main 会缓存 12 小时，改完代码线上还是旧文件——踩过一次：
+  // 本地 styles.css 已经修好，线上加载层还挂着旧样式，看起来像「改了没生效」。
+  // 固定 SHA 后每个提交的内容是确定的，也不会被别的分支/回滚带偏。
+  // 发版时用 `node tools/pin_ref.mjs` 更新这一行（它读 git HEAD 并只改这一处）。
+  var REF = 'dd1b3fe2835ac93c0a76953783198c0180b29cec';
   var CANDIDATES = [
-    { id: 'fastly', url: 'https://fastly.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
-    { id: 'jsdelivr', url: 'https://cdn.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@main/' },
-    { id: 'onms', url: 'https://jsd.onmicrosoft.cn/gh/' + OWNER + '/' + REPO + '@main/' },
-    { id: 'jsdmirror', url: 'https://cdn.jsdmirror.com/gh/' + OWNER + '/' + REPO + '@main/' }
+    { id: 'fastly', url: 'https://fastly.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@' + REF + '/' },
+    { id: 'jsdelivr', url: 'https://cdn.jsdelivr.net/gh/' + OWNER + '/' + REPO + '@' + REF + '/' },
+    { id: 'onms', url: 'https://jsd.onmicrosoft.cn/gh/' + OWNER + '/' + REPO + '@' + REF + '/' },
+    { id: 'jsdmirror', url: 'https://cdn.jsdmirror.com/gh/' + OWNER + '/' + REPO + '@' + REF + '/' }
   ];
   // 探测文件不能太小：2 KB 在任何节点都在 400 ms 内返回，量不出真实吞吐。
   // 实测 cdn.jsdmirror.com 拉 2 KB 是 396 ms（看着最快），拉 Arsenal.glb 只有 7 KB/s，
