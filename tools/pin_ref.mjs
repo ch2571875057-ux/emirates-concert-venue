@@ -51,14 +51,17 @@ if (checkOnly) {
   catch { console.error(`[pin_ref] REF=${cur.slice(0, 8)} 不在当前分支历史上`); process.exit(1); }
   const NL = String.fromCharCode(10);
   const changed = git('diff', '--name-only', cur, 'HEAD').split(NL).filter(Boolean);
-  const stray = changed.filter((f) => f !== 'index.html' && f !== 'tools/pin_ref.mjs');
+  // 只看页面真正会去拉的东西。README / tools / STORYBOARD 这些改了不影响 REF 指向的内容，
+  // 拿它们来报错只会让每次改文档都要无谓地推一次 REF。
+  const RUNTIME = /^(js\/|vendor\/|assets\/|styles\.css$)/;
+  const stray = changed.filter((f) => RUNTIME.test(f));
   if (stray.length) {
-    console.error(`[pin_ref] REF=${cur.slice(0, 8)} 之后有资源改动未进 REF：`);
+    console.error(`[pin_ref] REF=${cur.slice(0, 8)} 之后有运行时资源改动未进 REF：`);
     for (const f of stray) console.error('  ' + f);
     console.error('[pin_ref] 跑 `node tools/pin_ref.mjs` 把 REF 推到含这些改动的最新提交');
     process.exit(1);
   }
-  console.log(`[pin_ref] OK REF=${cur.slice(0, 8)}（之后只改了 index.html）`);
+  console.log(`[pin_ref] OK REF=${cur.slice(0, 8)}（之后没有运行时资源改动）`);
   process.exit(0);
 }
 
