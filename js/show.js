@@ -1,11 +1,12 @@
 // =====================================================================
-// show.js — 开场秀：灯光方案 → 星芒烟花替换光束
-// ShowManager：时间轴状态机，驱动 lightState/sceneState/应援棒波浪/LED 重绘
+// show.js — 开场秀：九段编舞（复用灯光秀 A/D/B 与涟漪/螺旋/点阵）+ 星芒烟花 + 全息投影
+// ShowManager：段表驱动的时间轴状态机，驱动 lightState/sceneState/LED/副屏/歌手/全息
 // Fireworks：星芒烟花（四芒星光斑粒子 + 放射长芒 + 闪光 + 池化 PointLight + 上升彗星）
 // =====================================================================
 import * as THREE from 'three';
 import { DATA } from './data.js';
 import { paintScreen, paintWaveText } from './stadium.js';
+import { lightShowFor } from './lightshowRegistry.js';
 
 const S = DATA.stadium;
 const STAGE_ORIGIN = { x: S.pitch.center.x, z: S.goalLineSouthZ + 6 };
@@ -269,14 +270,44 @@ export class Fireworks {
 }
 
 // ---------- 开场秀时间轴 ----------
+// 九段编舞由 DATA.show.segments 驱动（见 data.js 的注释）。
+// 关键约束：updateAudience() 里「灯光秀」与「人浪/点阵」互斥
+// （lightShowOf().w>0.001 时人浪分支走不到），所以段与段之间只能交替，不能叠加。
+const SEGMENTS = (() => {
+  let t = 0;
+  return DATA.show.segments.map((s) => {
+    const seg = Object.assign({}, s, { t0: t, t1: t + s.dur });
+    t += s.dur;
+    return seg;
+  });
+})();
+
+export function showTotal() {
+  return SEGMENTS.length ? SEGMENTS[SEGMENTS.length - 1].t1 : 0;
+}
+
+export function showSegments() {
+  return SEGMENTS;
+}
+
+export function showSegmentAt(t) {
+  if (t <= 0) return SEGMENTS[0];
+  for (let i = 0; i < SEGMENTS.length; i++) if (t < SEGMENTS[i].t1) return SEGMENTS[i];
+  return SEGMENTS[SEGMENTS.length - 1];
+}
+
+const lerpNum = (a, b, k) => a + (b - a) * k;
+
 export class ShowManager {
   constructor(refs) {
-    // refs: { lightState, sceneState, fireworks, getLedMat, toast }
+    // refs: { lightState, sceneState, fireworks, getLedMat, getWaveTextMats,
+    //         getSinger, getHolo, toast }
     this.r = refs;
     this.active = false;
     this.t = 0;
     this.launched = {};
     this.prev = null;
+    this.holoCmd = { pose: 'docked' };
   }
 
   start() {
@@ -284,32 +315,41 @@ export class ShowManager {
     this.active = true;
     this.t = 0;
     this.launched = {};
-    this.waveSet = false;
-    this.waveTextSet = false;
-    this.waveScroll = false;
+    this.segId = null;
     this.singerPhase = null;
     this.lastN = 0;
+    this.waveTextOn = false;
+    // 全量快照：旧版只存了 3 项，导致 dimmer/audienceMode/wave 被秀改完后回不去
     this.prev = {
       mode: r.lightState.mode,
-      lamp: r.lightState.lampBanks,
-      off: r.sceneState.lightsOff,
+      lampBanks: r.lightState.lampBanks,
+      lightsOff: r.sceneState.lightsOff,
+      dimmer: r.lightState.dimmer,
+      audienceMode: r.lightState.audienceMode,
+      pixelPattern: r.lightState.pixelPattern,
+      pixelScroll: r.lightState.pixelScroll,
+      wave: r.lightState.wave,
+      lightShow: r.lightState.lightShow,
+      lightShowT: r.lightState.lightShowT,
+      lightShowVariant: r.lightState.lightShowVariant,
+      lsFreeze: r.lightState.lsFreeze,
     };
     r.lightState.dimmer = 1;
     r.toast('开场秀开始');
   }
 
   get total() {
-    const P = DATA.show.phases;
-    return P.countdown + P.wave + P.storm + P.fireworks + P.outro;
+    return showTotal();
   }
 
-  // QA：以固定步长快进到 T 秒（烟花物理同步推进，确定帧）
+  // QA：以固定步长快进到 T 秒（烟花物理与全息姿态同步推进，结果确定）
   fastForward(T) {
     const step = 0.1;
     let t = 0;
     while (t < T && this.active) {
       this.step(step);
       this.r.fireworks.update(step);
+      if (this.r.holoStep) this.r.holoStep(step);
       t += step;
     }
   }
@@ -323,137 +363,162 @@ export class ShowManager {
   update(dt) {
     if (!this.active) return;
     this.step(dt);
-    if (this.waveScroll) {
+    if (this.waveTextOn) {
       const sp = DATA.concert.waveText.scrollSpeed;
       for (const wm of this.r.getWaveTextMats()) wm.map.offset.x = (wm.map.offset.x - dt * sp) % 1;
     }
   }
 
   step(dt) {
-    const P = DATA.show.phases;
-    const W = DATA.show.wave;
+    if (!this.active) return;
     const t = this.t;
-    const r = this.r;
-    const P0 = P.countdown, P1 = P0 + P.wave, P2 = P1 + P.storm, P3 = P2 + P.fireworks;
-    const stageWave = (t0, ampBoost, starts) => ({
-      t: t - t0, origin: STAGE_ORIGIN, speed: W.speed, width: W.width, ampBoost, starts,
-    });
+    if (t >= this.total) { this.end(); return; }
+    const seg = showSegmentAt(t);
+    const p = seg.dur > 0 ? Math.min(1, (t - seg.t0) / seg.dur) : 0;
+    this.applySegment(seg, p, t);
+    this.t += dt;
+  }
 
-    if (t < P0) {
-      // P0 暗场倒计时：全场压暗，LED 5→1，碗口环带随 lightsOff 压暗
-      r.lightState.lampBanks = false;
-      r.sceneState.lightsOff = true;
-      r.lightState.dimmer = 0.2;
-      r.lightState.wave = null;
-      const n = Math.max(1, Math.ceil(5 - t));
+  applySegment(seg, p, t) {
+    const r = this.r;
+    const L = r.lightState;
+
+    // ---- 段进入时的一次性动作 ----
+    if (this.segId !== seg.id) {
+      this.segId = seg.id;
+      if (seg.led === 'sea') {
+        const m = r.getLedMat();
+        if (m) paintScreen(m, 'sea');
+      }
+      if (seg.waveText === 'show' && !this.waveTextOn) {
+        const WT = DATA.concert.waveText;
+        for (const wm of r.getWaveTextMats()) paintWaveText(wm, WT.showText);
+        this.waveTextOn = true;
+      } else if (seg.waveText === 'default' && this.waveTextOn) {
+        const WT = DATA.concert.waveText;
+        for (const wm of r.getWaveTextMats()) { paintWaveText(wm, WT.defaultText); wm.map.offset.x = 0; }
+        this.waveTextOn = false;
+      }
+    }
+
+    // ---- LED 倒计时数字（按秒变化才重绘） ----
+    if (seg.led === 'countdown') {
+      const n = Math.max(1, Math.ceil(seg.dur - (t - seg.t0)));
       if (n !== this.lastN) {
         this.lastN = n;
         const m = r.getLedMat();
         if (m) paintScreen(m, 'countdown', n);
       }
-    } else if (t < P1) {
-      // P1 星海点亮：扫描模式 + 应援棒两轮波浪
-      r.lightState.lampBanks = true;
-      r.sceneState.lightsOff = false;
-      r.lightState.dimmer = 0.85;
-      r.lightState.mode = 'sweep';
-      r.lightState.wave = stageWave(P0, 1.2, DATA.show.waveStarts);
-      if (!this.waveSet) {
-        this.waveSet = true;
-        const m = r.getLedMat();
-        if (m) paintScreen(m, 'sea');
-        const sg = r.getSinger && r.getSinger();
-        if (sg) sg.userData.play('greet_01');
-        if (!this.waveTextSet) {
-          this.waveTextSet = true;
-          const WT = DATA.concert.waveText;
-          for (const wm of r.getWaveTextMats()) paintWaveText(wm, WT.showText);
-          this.waveScroll = true;
-        }
+    }
+
+    // ---- 全局光照 ----
+    if (typeof seg.lightsOff === 'boolean') r.sceneState.lightsOff = seg.lightsOff;
+    if (typeof seg.lampBanks === 'boolean') L.lampBanks = seg.lampBanks;
+    if (seg.mode) L.mode = seg.mode;
+    if (Array.isArray(seg.dimmer)) L.dimmer = lerpNum(seg.dimmer[0], seg.dimmer[1], p);
+    else if (typeof seg.dimmer === 'number') L.dimmer = seg.dimmer;
+
+    // ---- 看台：灯光秀 / 人浪 / 点阵（三者互斥，交给对应的状态字段） ----
+    if (seg.lightShow) {
+      L.lightShow = true;
+      L.lightShowVariant = seg.lightShow;
+      L.lightShowT = t - seg.t0;   // 段内时间：每段都从 0 起跑完整变体
+      L.lsFreeze = true;           // 由 show 独占推进，避免 tick 里再累加一次
+      if (seg.pixelPattern) L.pixelPattern = seg.pixelPattern;
+      if (typeof seg.pixelScroll === 'boolean') L.pixelScroll = seg.pixelScroll;
+    } else {
+      L.lightShow = false;
+      L.lsFreeze = true;
+      if (seg.audience) {
+        L.audienceMode = seg.audience;
+        if (seg.pixelPattern) L.pixelPattern = seg.pixelPattern;
+        if (typeof seg.pixelScroll === 'boolean') L.pixelScroll = seg.pixelScroll;
       }
-    } else if (t < P2) {
-      // P2 光束风暴：频闪→扫描，摇摆 ×2，歌手起舞
+      if (seg.audienceSwitch && (t - seg.t0) >= seg.audienceSwitch.at) {
+        L.audienceMode = seg.audienceSwitch.to;
+      }
+    }
+    L.wave = null;
+
+    // ---- 歌手 ----
+    if (seg.singer && this.singerPhase !== seg.singer) {
+      this.singerPhase = seg.singer;
       const sg = r.getSinger && r.getSinger();
-      if (sg && this.singerPhase !== 'dance') { this.singerPhase = 'dance'; sg.userData.play('dance_01'); }
-      r.lightState.lampBanks = true;
-      r.sceneState.lightsOff = false;
-      r.lightState.dimmer = 1;
-      r.lightState.mode = (t - P1) < P.storm / 2 ? 'strobe' : 'sweep';
-      r.lightState.wave = stageWave(P0, DATA.show.stormAmpBoost, DATA.show.waveStarts);
-    } else if (t < P3) {
-      // P3 光束退场 · 星芒烟花
-      const ft = t - P2;
-      this.singerPhase = 'dance';
-      r.lightState.lampBanks = true;
-      r.sceneState.lightsOff = false;
-      r.lightState.dimmer = Math.max(0.15, 1 - ft / 10);
-      // 烟花绽放期间：看台点阵显示心形，与烟花呼应
-      r.lightState.audienceMode = 'pixel';
-      r.lightState.pixelPattern = 'heart';
-      r.lightState.pixelScroll = false;
-      r.lightState.mode = 'sweep';
-      // 单发：0.8 / 2.8 / 4.8s（金蓝交替）
-      const SG = DATA.fireworks.singles;
-      for (let k = 0; k < SG.length; k++) {
-        const tt = 0.8 + k * 2.0;
-        if (ft >= tt && !this.launched['s' + k]) {
-          this.launched['s' + k] = true;
-          r.fireworks.launch(SG[k].x, SG[k].z, k % 2 === 0 ? 1 : 0, true);
-        }
-      }
-      // 终章环爆：8s 起 6 发
-      if (ft >= 8) {
-        const R = DATA.fireworks.finaleRing;
-        for (let i = 0; i < R.length; i++) {
-          const tt = 8 + i * DATA.show.finaleInterval;
-          if (ft >= tt && !this.launched['f' + i]) {
-            this.launched['f' + i] = true;
-            r.fireworks.launch(R[i].x, R[i].z, i % 2 === 0 ? 0 : 1, false);
+      if (sg) sg.userData.play(seg.singer);
+    }
+
+    // ---- 烟花 ----
+    const ft = t - seg.t0;
+    const FW = seg.fireworks;
+    if (FW) {
+      if (FW.singleAt) {
+        const SG = DATA.fireworks.singles;
+        for (let k = 0; k < FW.singleAt.length && k < SG.length; k++) {
+          if (ft >= FW.singleAt[k] && !this.launched[seg.id + 's' + k]) {
+            this.launched[seg.id + 's' + k] = true;
+            r.fireworks.launch(SG[k].x, SG[k].z, k % 2 === 0 ? 1 : 0, true);
           }
         }
       }
-      // 爆点冲击波：以碗心为源的短亮波（近似每次爆闪点亮观众席）
-      r.lightState.wave = {
-        t: ft, origin: r.fireworks.origin, speed: 95, width: 34, ampBoost: 1.5,
-        starts: [1.6, 3.6, 5.6, 8.8, 9.1, 9.4, 9.7, 10.0, 10.3],
-      };
-    } else if (t < this.total) {
-      // P4 尾声：dimmer 回升，波浪停止，副屏文字还原，点阵熄灭，歌手鞠躬
-      r.lightState.audienceMode = 'normal';
-      const sg = r.getSinger && r.getSinger();
-      if (sg && this.singerPhase !== 'bow') { this.singerPhase = 'bow'; sg.userData.play('bow'); }
-      if (this.waveScroll) {
-        this.waveScroll = false;
-        const WT = DATA.concert.waveText;
-        for (const wm of r.getWaveTextMats()) { paintWaveText(wm, WT.defaultText); wm.map.offset.x = 0; }
+      if (FW.ringFrom != null) {
+        const RG = DATA.fireworks.finaleRing;
+        const gap = DATA.fireworks.finaleInterval;
+        for (let i = 0; i < RG.length; i++) {
+          if (ft >= FW.ringFrom + i * gap && !this.launched[seg.id + 'r' + i]) {
+            this.launched[seg.id + 'r' + i] = true;
+            r.fireworks.launch(RG[i].x, RG[i].z, i % 2 === 0 ? 0 : 1, false);
+          }
+        }
       }
-      r.lightState.wave = null;
-      r.lightState.dimmer = Math.min(1, 0.15 + ((t - P3) / P.outro) * 0.85);
-    } else {
-      this.end();
-      return;
     }
-    this.t += dt;
+
+    // ---- 全息投影姿态 ----
+    let beat = 0;
+    if (seg.lightShow) {
+      const R = lightShowFor(seg.lightShow, t - seg.t0);
+      if (R && R.sticks && typeof R.sticks.beatEnv === 'number') beat = R.sticks.beatEnv;
+    }
+    this.holoCmd = { pose: seg.holo || 'hidden', beat };
   }
 
   end() {
     const r = this.r;
+    const L = r.lightState;
+    const P = this.prev;
     this.active = false;
-    r.lightState.lampBanks = this.prev?.lamp ?? true;
-    r.lightState.mode = this.prev?.mode ?? 'sweep';
-    r.lightState.dimmer = 1;
-    r.lightState.wave = null;
-    r.sceneState.lightsOff = this.prev?.off ?? false;
+    if (P) {
+      L.mode = P.mode;
+      L.lampBanks = P.lampBanks;
+      r.sceneState.lightsOff = P.lightsOff;
+      L.dimmer = P.dimmer ?? 1;
+      L.audienceMode = P.audienceMode;
+      L.pixelPattern = P.pixelPattern;
+      L.pixelScroll = P.pixelScroll;
+      L.wave = P.wave;
+      L.lightShow = P.lightShow;
+      L.lightShowT = P.lightShowT;
+      L.lightShowVariant = P.lightShowVariant;
+      L.lsFreeze = P.lsFreeze;
+    } else {
+      L.dimmer = 1;
+      L.audienceMode = 'normal';
+      L.wave = null;
+      L.lightShow = false;
+    }
     const m = r.getLedMat();
     if (m) paintScreen(m, 'sea');
-    if (this.waveScroll) {
+    if (this.waveTextOn) {
       const WT = DATA.concert.waveText;
       for (const wm of r.getWaveTextMats()) { paintWaveText(wm, WT.defaultText); wm.map.offset.x = 0; }
-      this.waveScroll = false;
+      this.waveTextOn = false;
     }
-    r.lightState.audienceMode = 'normal';
     const sg = r.getSinger && r.getSinger();
-    if (sg) { sg.userData.play('dance_01'); this.singerPhase = null; }
+    if (sg) sg.userData.play('dance_01');
+    this.singerPhase = null;
+    this.segId = null;
+    // 秀结束后全息不消散，缩到舞台左侧常驻（用户选的方案）
+    this.holoCmd = { pose: 'docked', beat: 0 };
+    if (r.onShowEnd) r.onShowEnd();
     r.toast('开场秀结束');
   }
 }

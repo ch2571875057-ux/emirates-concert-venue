@@ -591,8 +591,8 @@ export const DATA = {
       ribbonBase: 1.6,
       ribbonBeat: 4.0,
       beamBeat: 1.2,
-      bodyBase: 0.7,
-      bodyBeat: 1.9,
+      bodyBase: 0.55,
+      bodyBeat: 1.05,      // 屏体峰值：原 1.9 在 HDR+ACES 下会整块 clip 成纯白
       bodyFreq: 6,
       bodyPulse: 0.05,       // 屏体面积随拍点的缩放幅度
     },
@@ -693,12 +693,112 @@ export const DATA = {
   },
 
   // ---------- 开场秀 ----------
+  // 九段时间轴。看台的「灯光秀」与「人浪」在 updateAudience() 里是互斥的
+  // （lightShowOf().w>0.001 时人浪分支根本走不到），所以只能交替编排：
+  // 灯光秀段 → 人浪段 → 点阵段 → 灯光秀段。
+  //
+  // 三段灯光秀的 dur 与各自 lightShowDurationFor(id) 严格相等
+  // （A 11.35 / D 11.00 / B 13.00），保证段尾 fall/fade 段走完 w→0 自然回落；
+  // 改这里的 dur 必须让 tools/verify_show_timeline.mjs 一起过。
+  //
+  // 字段：
+  //   audience  看台驱动：'normal' | 'tide' | 'pixel' | 六档人浪 id | null（null = 不写，交给灯光秀）
+  //   lightShow 灯光秀变体 id（'a'|'b'|'c'|'d'|'e'）或 null
+  //   dimmer    数字，或 [起始, 结束] 由段内进度线性插值
+  //   led       LED 主屏：'countdown' 叠倒计时数字 / 'sea' 重绘星海 / null 不动
+  //   waveText  副屏：'show' 写 ARE YOU READY / 'default' 还原 / null 不动
+  //   holo      全息投影姿态（见 holo.poses）
+  //   fireworks { singleAt:[段内秒...] } 或 { ringFrom: 段内秒 }
+  //   audienceSwitch 可选：{ at: 段内秒, to: 目标值 } 段内切换
   show: {
-    phases: { countdown: 6, wave: 8, storm: 12, fireworks: 15, outro: 5 }, // 总 46s
     wave: { speed: 55, width: 26 },  // 星海波浪：波前速度 m/s、波峰宽度 m（波源=舞台）
-    waveStarts: [0, 4.2],            // P1 两轮波浪的起始时刻
-    stormAmpBoost: 2.0,              // P2 摇摆增幅
-    finaleInterval: 0.28,            // 终章环爆间隔
+    segments: [
+      {
+        id: 'countdown', dur: 5.0, label: '倒计时',
+        audience: 'normal', lightShow: null, lightsOff: true, lampBanks: false,
+        dimmer: 0.15, singer: null, led: 'countdown', waveText: null, holo: 'hidden',
+      },
+      {
+        id: 'wake', dur: 4.0, label: '星海点亮',
+        audience: 'tide', lightShow: null, lightsOff: false, lampBanks: true,
+        dimmer: [0.25, 1.0], singer: 'greet_01', led: 'sea', waveText: 'show', holo: 'pillar',
+      },
+      {
+        id: 'ringA', dur: 11.35, label: '环带呼吸',
+        audience: null, lightShow: 'a', lightsOff: false, lampBanks: true,
+        dimmer: 1, singer: 'dance_01', led: 'sea', waveText: 'show', holo: 'materialize',
+      },
+      {
+        id: 'heartbeat', dur: 11.0, label: '心跳',
+        audience: null, lightShow: 'd', lightsOff: false, lampBanks: true,
+        dimmer: 1, singer: 'clap', led: 'sea', waveText: 'show', holo: 'pulse',
+      },
+      {
+        id: 'ripple', dur: 4.0, label: '涟漪扩散',
+        audience: 'ripple', lightShow: null, lightsOff: false, lampBanks: true,
+        dimmer: 0.9, singer: 'dance_01', led: 'sea', waveText: 'show', holo: 'rise',
+      },
+      {
+        id: 'spiral', dur: 4.0, label: '螺旋上升',
+        audience: 'spiral', lightShow: null, lightsOff: false, lampBanks: true,
+        dimmer: 1.0, singer: 'dance_01', led: 'sea', waveText: 'show', holo: 'spin',
+      },
+      {
+        id: 'heart', dur: 4.0, label: '心形点阵 + 烟花',
+        audience: 'pixel', pixelPattern: 'heart', pixelScroll: false,
+        lightShow: null, lightsOff: false, lampBanks: true, mode: 'strobe',
+        dimmer: 0.95, singer: 'cheer', led: 'sea', waveText: 'show', holo: 'push',
+        fireworks: { singleAt: [0.6, 1.8, 3.0] },
+      },
+      {
+        id: 'finale', dur: 13.0, label: '深蓝终章',
+        audience: null, lightShow: 'b', lightsOff: false, lampBanks: true,
+        dimmer: 1, singer: 'cheer', led: 'sea', waveText: 'show', holo: 'center',
+        fireworks: { ringFrom: 5.0 },
+      },
+      {
+        id: 'outro', dur: 6.0, label: '谢幕',
+        audience: 'tide', audienceSwitch: { at: 3.0, to: 'normal' },
+        lightShow: null, lightsOff: false, lampBanks: true,
+        dimmer: [0.55, 1.0], singer: 'bow', led: 'sea', waveText: 'default', holo: 'fly',
+      },
+    ],
+  },
+
+  // ---------- 全息投影（舞台前沿的 Q 版吉祥物）----------
+  // 落点是射线实测出来的开阔带：舞台前沿 z≈97、脚底 y≈13.4，高 7m。
+  // 朝观众方向 140m 无遮挡，距 LED 主屏（z=111.5）还有 14m，两侧海浪雕塑各留 27m 余量。
+  holo: {
+    url: './assets/holo.glb',
+    height: 11.5,                    // 世界高度；模型 bbox 高 1.000，故 scale = 11.5
+    yaw: Math.PI / 2,   // 模型本地正面朝 +x，绕 Y 转 +90° 才正对观众（-z）
+    stage: { x: -32.4, y: 7.32, z: 95.5 },                  // 显形/居中位（脚底=舞台台面）
+    dock: { x: -54.0, y: 7.32, z: 97.0, scale: 0.55 },      // 舞台左侧常驻位（台面同一高度）
+    color: 0x7fd0ff,                 // 冷蓝基调
+    opacity: 0.86,                   // 显形满值
+    dockOpacity: 0.72,
+    scanFreq: 620, scanSpeed: 5.5,   // 水平扫描线（屏幕空间：uv.y）
+    scrollSpeed: 0.55,               // 竖向流动亮带
+    glitchAmp: 0.0016,               // uv 抖动幅度（很小，只为「信号不稳」感）
+    rim: 1.7,                        // 菲涅尔边缘强度
+    spin: 0.18,                      // 常驻自转 rad/s
+    bobAmp: 0.15, bobHz: 0.6,        // 上下浮动
+    poseLerp: 2.6,                   // 姿态趋近速度（1/s），越大越硬
+    flySec: 2.4,                     // fly 段飞行时长
+    pillarRadius: 3.2,               // 光柱半径
+    ringRadius: 3.4,                 // 底座光环半径
+    poses: {
+      hidden: { lift: 0.0, scale: 1.00, opacity: 0.00 },
+      pillar: { lift: 0.0, scale: 1.00, opacity: 0.10 },
+      materialize: { lift: 0.0, scale: 1.00, opacity: 0.86 },
+      pulse: { lift: 0.0, scale: 1.06, opacity: 0.95 },
+      rise: { lift: 1.8, scale: 1.08, opacity: 0.90 },
+      spin: { lift: 2.8, scale: 1.10, opacity: 0.90 },
+      push: { lift: 1.2, scale: 1.05, opacity: 0.95 },
+      center: { lift: 0.6, scale: 1.08, opacity: 0.92 },
+      fly: { lift: 0.0, scale: 1.00, opacity: 0.86 },
+      docked: { lift: 0.0, scale: 1.00, opacity: 0.72 },
+    },
   },
 
   // ---------- 星芒烟花 ----------
@@ -715,6 +815,7 @@ export const DATA = {
     launch: { speed: 34, startY: 26 }, // 上升彗星
     heightMin: 56, heightMax: 74,    // 爆高范围
     maxConcurrent: 3,                // PointLight 池上限
+    finaleInterval: 0.28,            // 终章环爆间隔（finale 段内）
     // 发射点位（相对碗心；都在屋盖开口范围内）
     singles: [ { x: 0, z: 50 }, { x: -14, z: 32 }, { x: 14, z: 58 } ],
     finaleRing: [

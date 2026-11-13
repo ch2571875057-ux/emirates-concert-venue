@@ -16,7 +16,8 @@ import {
   LS_VARIANTS, LS_BY_ID, LS_DEFAULT, lsEntry, lsParams,
   lightShowFor, lightShowPhaseFor, lightShowDurationFor, lightShowTimeScale,
 } from './lightshowRegistry.js';
-import { ShowManager, Fireworks } from './show.js';
+import { ShowManager, Fireworks, showSegments } from './show.js';
+import { buildHolo, updateHolo, snapHolo } from './holo.js';
 
 // ---------- URL 参数 ----------
 const Q = new URLSearchParams(location.search);
@@ -93,6 +94,10 @@ let bandGroup = null;
 let skyMesh = null;
 let ribbonMesh = null;
 let show = null;
+let holoGroup = null;
+let holoEnabled = true;
+let holoFreeze = false;   // ?holoPhase= 冻结时不推进状态机
+let holoTime = 0;         // 全息自己的场景时钟（自转/浮动相位，快进也用它复现）
 let lsStageEl = null; // 灯光秀阶段指示（HUD 建好后赋值，tick 里刷新）
 let lsLastPhase = '';
 // 阶段中文名：tick() 每帧要用，必须放在模块作用域（放在 buildHUD 里会 ReferenceError
@@ -124,6 +129,12 @@ Promise.all([
   new GLTFLoader().loadAsync(DATA.concert.crowd.urlA, undefined, onProg),
   new GLTFLoader().loadAsync(DATA.concert.crowd.urlB, undefined, onProg),
   new GLTFLoader().loadAsync(DATA.concert.singer.url, undefined, onProg),
+  // 全息投影：失败不该拖垮主场景（缺文件时开场秀照常跑，只是没有全息）
+  new GLTFLoader().loadAsync(DATA.holo.url, undefined, onProg).catch((e) => {
+    console.warn('[holo] load failed:', e);
+    loadingError.textContent += '[holo] ' + (e && e.message ? e.message : e) + '\n';
+    return null;
+  }),
   // 乐队乐器逐件加载：单件失败不该拖垮主场景，所以用 allSettled 语义（catch → null）
   ...DATA.concert.band.items.map((it) =>
     new GLTFLoader().loadAsync(it.url, undefined, onProg).catch((e) => {
@@ -131,7 +142,7 @@ Promise.all([
       loadingError.textContent += `[band] ${it.id} ${e && e.message ? e.message : e}\n`;
       return null;
     })),
-]).then(([gltf, crowdA, crowdB, singerGltf, ...bandGltfs]) => {
+]).then(([gltf, crowdA, crowdB, singerGltf, holoGltf, ...bandGltfs]) => {
   const stadium = convertGLB(gltf.scene);
   scene.add(stadium);
   stadiumGroup = stadium;
@@ -200,6 +211,29 @@ Promise.all([
     console.warn('[band] skipped:', e);
     loadingError.textContent += '[band] ' + (e && e.message ? e.message : e) + '\n';
   }
+  // 全息投影（舞台前沿的 Q 版吉祥物；加载失败只是没有它，不影响其它子系统）
+  try {
+    if (holoGltf) {
+      holoGroup = buildHolo(holoGltf, DATA.holo);
+      stadium.add(holoGroup);
+      const q = Q.get('layers');
+      if (q && !q.split(',').map((x) => x.trim()).includes('holo')) holoGroup.visible = false;
+      // 默认常驻（不在开场秀里也站在舞台左侧），开场秀会从光柱重新显形
+      snapHolo(holoGroup, 'docked', 0);
+      if (debugMode) {
+        const bb = new THREE.Box3().setFromObject(holoGroup);
+        loadingError.textContent += `[holo] meshes=${holoGroup.userData.meshes.length}`
+          + ` scale=${holoGroup.userData.scale.toFixed(3)}`
+          + ` bboxH=${holoGroup.userData.bboxHeight.toFixed(3)}`
+          + ` y=[${bb.min.y.toFixed(2)},${bb.max.y.toFixed(2)}]`
+          + ` x=[${bb.min.x.toFixed(1)},${bb.max.x.toFixed(1)}]\n`;
+      }
+    }
+  } catch (e) {
+    console.warn('[holo] skipped:', e);
+    holoGroup = null;
+    loadingError.textContent += '[holo] ' + (e && e.message ? e.message : e) + '\n';
+  }
   // QA：?fx=tide|pixel|normal 与 ?pattern=heart|note|smiley|star|text 直达特效
   const qfx = Q.get('fx');
   if (qfx) lightState.audienceMode = qfx;
@@ -222,6 +256,10 @@ Promise.all([
     getLedMat: () => stadium.userData.stageGroup?.userData.ledMainMat,
     getWaveTextMats: () => stadium.userData.stageGroup?.userData.waveTextMats || [],
     getSinger: () => singerGroup,
+    getHolo: () => holoGroup,
+    // 快进时也要让全息按同一步长推进，否则 ?showT= 停下的姿态与实时播放不一致
+    holoStep: (dt) => { if (holoGroup && !holoFreeze) { holoTime += dt; updateHolo(holoGroup, dt, show ? show.holoCmd : {}, holoTime); } },
+    onShowEnd: () => { if (holoGroup && holoEnabled) { holoTime = 0; snapHolo(holoGroup, 'docked', 0); } },
     toast,
   });
   if (Q.get('show') === '1') {
@@ -238,6 +276,23 @@ Promise.all([
     const lt = parseFloat(Q.get('lsT'));
     lightState.lightShowT = isFinite(lt) ? lt : 0;
     lightState.lsFreeze = isFinite(lt);
+  }
+  // QA：全息投影
+  //   ?holo=0        强制隐藏（默认是 docked 常驻）
+  //   ?holoPhase=x   冻结到指定姿态：hidden|pillar|materialize|pulse|rise|spin|push|center|fly|docked
+  //   ?holoT=秒      冻结时用这个场景时钟（自转/浮动相位，便于逐帧复现截图）
+  //   ?holoDump=1    把姿态/opacity/位置写到 #loading-error，供 headless 断言
+  if (Q.get('holo') === '0') holoEnabled = false;
+  const hPhase = Q.get('holoPhase');
+  if (holoGroup) {
+    if (hPhase && DATA.holo.poses[hPhase]) {
+      holoFreeze = true;
+      const ht = parseFloat(Q.get('holoT'));
+      holoTime = isFinite(ht) ? ht : 0;
+      snapHolo(holoGroup, hPhase, holoTime);
+    } else if (!holoEnabled) {
+      snapHolo(holoGroup, 'hidden', 0);
+    }
   }
   loaded = true;
   loadingEl.classList.add('done');
@@ -539,7 +594,7 @@ function benchSticks() {
 
 // ---------- 初始机位 ----------
 // QA 逐层显影：?layers=ground,stage,audience（缺省全部显示）
-const LAYER_NAMES = ['bowl', 'ground', 'concert-field', 'stage', 'sound', 'stage-lights', 'audience', 'crowd', 'singer', 'band', 'led-ribbon', 'sky'];
+const LAYER_NAMES = ['bowl', 'ground', 'concert-field', 'stage', 'sound', 'stage-lights', 'audience', 'crowd', 'singer', 'band', 'led-ribbon', 'sky', 'holo'];
 function applyLayersParam(stadium) {
   const q = Q.get('layers');
   if (!q) return;
@@ -549,6 +604,7 @@ function applyLayersParam(stadium) {
   byName.crowd = crowdGroup;
   byName.singer = singerGroup;
   byName.band = bandGroup;
+  byName.holo = holoGroup;
   for (const name of LAYER_NAMES) {
     const obj = byName[name];
     if (obj) obj.visible = show.has(name);
@@ -1047,7 +1103,7 @@ function buildHUD() {
   const gs = grp('show', '🎆', '开场秀');
   const bPlay = document.createElement('button');
   bPlay.className = 'hud-btn';
-  bPlay.textContent = '▶ 播放开场秀（46s）';
+  bPlay.textContent = `▶ 播放开场秀（${Math.round(show ? show.total : 0)}s）`;
   bPlay.onclick = () => { if (show && !show.active) show.start(); else toast('开场秀进行中'); };
   gs.appendChild(bPlay);
   const bSkip = document.createElement('button');
@@ -1055,6 +1111,14 @@ function buildHUD() {
   bSkip.textContent = '■ 跳过';
   bSkip.onclick = () => { if (show && show.active) show.skip(); else toast('没有进行中的开场秀'); };
   gs.appendChild(bSkip);
+  // 全息投影开关（秀播放期间不影响编舞，只决定常驻态是否可见）
+  const holoToggle = mkToggle(gs, '全息投影', holoEnabled, (v) => {
+    holoEnabled = v;
+    if (!holoGroup) return;
+    if (!v) snapHolo(holoGroup, 'hidden', 0);
+    else if (!(show && show.active)) snapHolo(holoGroup, 'docked', holoTime);
+  });
+  holoToggle.apply(holoEnabled);
 
   // 灯光秀（两个视频的复刻，各自循环播放）
   const gls = grp('lightshow', '✨', '灯光秀');
@@ -1240,7 +1304,7 @@ function _pFlush() {
   const a = _perfAcc;
   a.n++;
   if (a.n < 30) return;
-  const keys = ['atmos', 'show', 'hud', 'lights', 'ribbon', 'audience', 'crowd', 'band', 'singer', 'camera', 'render', 'tick'];
+  const keys = ['atmos', 'show', 'hud', 'lights', 'ribbon', 'audience', 'crowd', 'band', 'singer', 'holo', 'camera', 'render', 'tick'];
   const parts = keys.filter((k) => a.t[k] != null).map((k) => `${k}=${(a.t[k] / a.n).toFixed(2)}`);
   loadingError.textContent += `[perf] frames=${a.n} ${parts.join(' ')}\n`;
   a.n = 0; a.t = {}; a.last = performance.now();
@@ -1310,6 +1374,11 @@ function tickBody() {
   _p('band');
   if (singerGroup && singerGroup.visible) updateSinger(singerGroup, dt);
   _p('singer');
+  if (holoGroup && holoEnabled && !holoFreeze) {
+    holoTime += dt;
+    updateHolo(holoGroup, dt, show && show.active ? show.holoCmd : { pose: 'docked' }, holoTime);
+  }
+  _p('holo');
   // 歌手环绕运镜：围绕主唱缓慢环绕（拖拽即退出）
   if (singerGroup && currentViewId === 'sg-orbit' && !tween && !walk.enabled) {
     orbitAngle += dt * 0.14;
